@@ -1,0 +1,12 @@
+# Local credentials and machine-specific runtime state.
+.env
+.env.*
+!.env.example
+
+# Local caches and transient logs.
+cache/
+.cache/
+.omx/
+.pytest_cache/
+__pycache__/
+*.log

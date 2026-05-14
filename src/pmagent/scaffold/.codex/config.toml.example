@@ -1,0 +1,108 @@
+# ---------------------------------------------------------------------------
+# pmagent × Codex CLI configuration template
+# ---------------------------------------------------------------------------
+#
+# Why this file has a ".example" suffix:
+#   Codex CLI reads its runtime config from ~/.codex/config.toml (user-scoped),
+#   not from the current working directory. pmagent ships this template inside
+#   <data_dir>/.codex/ so you can review it, then merge the parts you want into
+#   ~/.codex/config.toml by hand:
+#
+#       # macOS / Linux
+#       mkdir -p ~/.codex
+#       cp <data_dir>/.codex/config.toml.example ~/.codex/config.toml
+#
+#       # Windows PowerShell
+#       New-Item -ItemType Directory -Force $HOME/.codex | Out-Null
+#       Copy-Item <data_dir>/.codex/config.toml.example $HOME/.codex/config.toml
+#
+#   If you already maintain ~/.codex/config.toml, cherry-pick the sections you
+#   want instead of overwriting.
+#
+# ---------------------------------------------------------------------------
+# About hooks (important)
+# ---------------------------------------------------------------------------
+#
+# Codex CLI has no lifecycle hooks comparable to Claude Code. The hard gates
+# declared in <data_dir>/AGENTS.md stay as SOFT constraints when you drive
+# pmagent from Codex: the agent must remember to run them.
+#
+# Concretely, at the start of each Codex session (and before every phase
+# transition), the agent should run, verbatim:
+#
+#   pmagent status --json
+#   pmagent observe audit --workspace <workspace> --run-catch-up --json
+#   pmagent observe unread --workspace <workspace> --json
+#
+# and surface any unread observation backlog to the user before touching main
+# work. AGENTS.md §Hard Workflow Gates is the source of truth here; see also
+# docs/pmagent-hooks-enforcement-design.md for which Claude Code hooks cover
+# each gate. The same gates must be walked by hand in Codex.
+#
+# ---------------------------------------------------------------------------
+# Recommended defaults for a PM workflow driven by pmagent
+# ---------------------------------------------------------------------------
+
+# Default model. Override per-profile if you want something cheaper for idle
+# polling sessions.
+model = "gpt-5"
+
+# Force the agent to pause before running non-read commands so it cannot
+# silently advance the workflow (mirrors AGENTS.md §会话规则 "不要静默推进").
+approval_policy = "on-request"
+
+# Let Codex edit files inside the project, but do not let it reach out beyond
+# the sandbox. pmagent data_dir doubles as the project dir.
+sandbox_mode = "workspace-write"
+
+# Most pmagent users never want Codex to silently execute in danger mode.
+# Keep this commented; uncomment only for throwaway scripted runs.
+# sandbox_mode = "danger-full-access"
+
+# Working directory. Codex already respects the shell cwd, so you usually do
+# not need this. Uncomment if you want a global default that points at your
+# pmagent data dir:
+# cwd = "/absolute/path/to/your/pm-data"
+
+# ---------------------------------------------------------------------------
+# Profiles: separate configs for "author" vs "observe" sessions
+# ---------------------------------------------------------------------------
+#
+# Usage: `codex --profile pmagent-author` / `codex --profile pmagent-observe`
+
+[profiles.pmagent-author]
+model = "gpt-5"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+# Author sessions edit Requirement.md / PRD / decisions / strategy. They must
+# respect AGENTS.md §Requirement Lifecycle Rule: Requirement.md body is owned
+# by the agent, never by a CLI patch.
+
+[profiles.pmagent-observe]
+model = "gpt-5-mini"
+approval_policy = "never"
+sandbox_mode = "read-only"
+# Observe sessions surface and triage observation backlog; they should not
+# edit canonical PRD text directly. observation_boundary_gate applies.
+
+# ---------------------------------------------------------------------------
+# MCP servers (optional): expose pmagent CLI as tool calls to Codex
+# ---------------------------------------------------------------------------
+#
+# This requires an MCP server wrapper for pmagent. None ships today; uncomment
+# and fill in once you have one. The command must be absolute or on PATH.
+#
+# [mcp_servers.pmagent]
+# command = "pmagent-mcp"
+# args = []
+# env = { }
+
+# ---------------------------------------------------------------------------
+# Notifications (optional)
+# ---------------------------------------------------------------------------
+#
+# Codex CLI supports a `notify` array that fires a shell command on
+# turn-complete / idle. Useful for "ping me when pmagent is waiting on
+# clarifying input".
+#
+# notify = ["bash", "-lc", "echo codex session waiting >> ~/.codex/notify.log"]

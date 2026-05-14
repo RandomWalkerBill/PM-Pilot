@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pmagent"
+version = "0.1.0"
+description = "PM Agent as a Python package with a CLI-first workflow"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+authors = [
+  { name = "PM Agent" }
+]
+dependencies = [
+  "openai>=1.0.0",
+  "jieba>=0.42",
+  "rank-bm25>=0.2",
+  "sqlite-vec>=0.1",
+  "PyYAML>=6.0",
+]
+
+[project.scripts]
+pmagent = "pmagent.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pmagent = [
+  "default_config.yaml",
+  "skills/**/*.md",
+  "templates/*.md",
+  "ops/**/*",
+  "vendor/*.js",
+  "scaffold/.env",
+  "scaffold/.env.example",
+  "scaffold/.gitignore",
+  "scaffold/**/*",
+]

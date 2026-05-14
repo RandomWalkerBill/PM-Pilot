@@ -1,0 +1,6 @@
+# 由 `pmagent init` 写入；如需更新，可重新执行 `pmagent init --dir <path>`。
+data_dir: ~/pmagent-data
+
+# 可选的全局偏好设置（预留给未来使用）
+# default_llm: gpt-4o
+# locale: zh-CN

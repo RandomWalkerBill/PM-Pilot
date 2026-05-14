@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "github": {
+    "remote_env": "PMAGENT_GITHUB_REMOTE",
+    "branch": "main",
+    "data_repo_note": "Configure this for the PM Data directory, not for the pmagent source repository."
+  },
+  "feishu": {
+    "default_wiki_adapter": "builtin-lark",
+    "wiki_adapter_command": "python -m pmagent.ops.lark_wiki_push",
+    "wiki_adapter_requires": "available and configured lark-cli",
+    "wiki_space_id_env": "PMAGENT_FEISHU_WIKI_SPACE_ID",
+    "default_wiki_space_id": "my_library",
+    "wiki_node_mapping": "projects/<project>/.pmagent/feishu-wiki-nodes.jsonl",
+    "wiki_target_hierarchy": "<project>/workspaces/<workspace>/<relative-file>",
+    "wiki_push_command_env": "PMAGENT_FEISHU_WIKI_PUSH_COMMAND",
+    "wiki_push_command_env_role": "optional custom adapter override",
+    "base_app_token_env": "PMAGENT_FEISHU_BASE_APP_TOKEN",
+    "cards_table_id_env": "PMAGENT_FEISHU_CARDS_TABLE_ID"
+  },
+  "openclaw": {
+    "protocol": "config/openclaw-advisor-protocol.md",
+    "candidate_card_schema": "config/candidate-card.schema.json"
+  }
+}

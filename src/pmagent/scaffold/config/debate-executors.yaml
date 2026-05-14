@@ -1,0 +1,13 @@
+﻿schema_version: 1
+defaults:
+  defender:
+    exec: claude
+    model: null
+  attacker:
+    exec: claude
+    model: null
+  synthesizer:
+    exec: claude
+    model: null
+
+

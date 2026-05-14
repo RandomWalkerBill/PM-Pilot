@@ -1,0 +1,73 @@
+{
+  "_pmagent_note": "Managed by pmagent. If you maintain your own .claude/settings.json, pmagent init will write this template to .claude/settings.pmagent.json instead so you can merge by hand. Hook commands run pmagent through Python module execution so they do not depend on the `pmagent` console script being on PATH. If you run pmagent from a virtualenv, change the commands to that venv's python with `-m pmagent.cli hook <name>`.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m pmagent.cli hook session_bootstrap || python -m pmagent.cli hook session_bootstrap",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m pmagent.cli hook state_surface || python -m pmagent.cli hook state_surface",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m pmagent.cli hook pre_bash_guard || python -m pmagent.cli hook pre_bash_guard",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m pmagent.cli hook pre_write_guard || python -m pmagent.cli hook pre_write_guard",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m pmagent.cli hook post_mutation_check || python -m pmagent.cli hook post_mutation_check",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m pmagent.cli hook response_validator || python -m pmagent.cli hook response_validator",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

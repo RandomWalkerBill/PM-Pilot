@@ -1,0 +1,335 @@
+schema_version: 1
+name: pmagent-agent-workflow
+purpose: >
+  Agent-readable workflow contract for the end-to-end PM Agent tool chain.
+  This file is the primary structured execution contract for runtime agents.
+
+source_of_truth_hierarchy:
+  - "local PM Data Git repository for project content"
+  - "CLI / Python implementation for runtime behavior"
+  - "config/agent-workflow.yaml for structured execution contract"
+  - "AGENTS.md for host-readable summary"
+  - "runtime state files (projects.json, project/workspace state, workspace-summary.md, observations/<project>/index.json|policy.json|state.json)"
+
+feishu_sync_contract:
+  canonical_source: "local PM Data Git repository"
+  wiki_role: "Markdown mirror for human collaboration"
+  base_role: "Candidate Card relay"
+  auth_guide_command: "pmagent infra auth-guide --brand lark --app-id <approved-app-id>"
+  minimal_auth_rule: "Use auth_guide_command for first-time lark-cli setup; do not run lark-cli auth login without an explicit minimal --scope."
+  status_command: "pmagent infra sync-status --workspace <workspace> --json"
+  push_command: "pmagent infra wiki-push --workspace <workspace> --json"
+  bootstrap_command: "pmagent infra bootstrap --project <project> --json"
+  confirmed_sync_rule: "Ask the user before running wiki-push; do not silently sync draft edits."
+  target_hierarchy: "<project>/workspaces/<workspace>/<relative-file>"
+  default_adapter: "builtin-lark"
+  default_adapter_command: "python -m pmagent.ops.lark_wiki_push"
+  default_adapter_requires: "available and configured lark-cli"
+  space_id_env: "PMAGENT_FEISHU_WIKI_SPACE_ID"
+  default_space_id: "my_library"
+  push_command_env: "PMAGENT_FEISHU_WIKI_PUSH_COMMAND"
+  push_command_env_role: "optional custom adapter override"
+  success_ledger: "workspaces/<workspace>/.pmagent/feishu-sync-ledger.json"
+  node_mapping: "projects/<project>/.pmagent/feishu-wiki-nodes.jsonl"
+  triggers:
+    - "after mutating whitelisted Markdown"
+    - "before phase handoff with pending Markdown changes"
+    - "manual"
+  whitelisted_workspace_files:
+    - "Requirement.md"
+    - "workspace-summary.md"
+    - "research/*.md"
+    - "decisions/*.md"
+    - "prd/*.md"
+    - "strategy/*.md"
+    - "dev/dev-plan.md"
+    - "dev/slices/*.md"
+    - "dev/qa/*.md"
+    - "dev/lessons/*.md"
+    - "dev/runs/**/*.md"
+    - "context/clarifying-log.md"
+    - "exports/**"
+  excludes:
+    - ".pmagent/*.json"
+    - "observations/**"
+    - "candidate-updates/**"
+    - "cache/**"
+  pending_rule: "If pending_files is non-empty and configured=true, ask the user whether to sync now; only run push_command after confirmation. If configured=false, surface missing lark-cli/custom adapter and do not claim Feishu sync."
+  base_card_rule: "Feishu Base Candidate Cards use infra pull-cards/review-card, not wiki-push."
+
+state_model:
+  active_project_source: "config/projects.json.active_project"
+  active_workspace_source: "config/projects.json.active_workspace"
+  machine_state_source: "workspaces/<workspace>/.pmagent/current-state.json"
+  recommended_skills_source: "workspaces/<workspace>/.pmagent/current-state.json.recommended_skills"
+  workspace_phase_enum:
+    - clarifying
+    - researching
+    - delivery
+    - dev-readiness
+    - maintaining
+  observation_cadence_enum:
+    - manual
+    - weekly
+    - weekday-morning
+    - daily
+    - every-12-hours
+    - every-6-hours
+  candidate_card_state_enum:
+    - inbox
+    - accepted
+    - rejected
+    - snoozed
+  quality_level_enum:
+    - weak
+    - moderate
+    - strong
+
+skill_resolution:
+  default_skill_namespace: "pmagent-local"
+  local_skill_roots:
+    - "skills/steps/*/skill.md"
+    - "config/agent-workflow.yaml"
+  mainflow:
+    - "workspace-init"
+    - "status|route"
+    - "clarify status|answer|set-scores"
+    - "write-requirement"
+    - "do-research"
+    - "write-prd"
+  global_skill_guard:
+    forbidden_substitutes:
+      - "$deep-interview"
+      - "$plan"
+      - "$ralplan"
+      - "$autopilot"
+      - "$ralph"
+      - "$team"
+    rule: "Never write global Codex/OMX skills into PMAgent recommended_skills, status blocks, or next-step commands."
+    exception_contract: "Global skills are explicit external aids only; write conclusions back to PMAgent artifacts."
+
+artifacts:
+  project_root: "projects/<project>/"
+  workspace_root: "workspaces/<workspace>/"
+  observation_root: "observations/<project>/"
+  workspace_files:
+    - "Requirement.md"
+    - "workspace-summary.md"
+    - ".pmagent/current-state.json"
+    - "context/debates/"
+    - "strategy/"
+    - "decisions/"
+    - "research/"
+    - "context/"
+    - "prd/"
+    - "dev/"
+    - "exports/"
+    - "candidate-updates/"
+    - "maintenance/"
+  observation_files:
+    - "index.json"
+    - "policy.json"
+    - "state.json"
+    - "files/"
+    - "runs/"
+
+phase_raw_log_contracts:
+  clarifying:
+    path: "workspaces/<workspace>/context/clarifying-log.md"
+    role: "full raw question/answer history for the clarifying phase"
+    write_expectation: "append the complete raw content submitted during clarifying rather than only distilled conclusions"
+  researching:
+    path: "workspaces/<workspace>/research/research-log.md"
+    role: "full raw note/history log for the researching phase"
+    write_expectation: "append the complete raw content submitted during researching rather than only distilled conclusions"
+
+workspace_summary_contract:
+  role: "compressed current-state entry point for runtime agents and observation executors"
+  required_fields:
+    - "current goal"
+    - "current business context / scope"
+    - "current phase"
+    - "current PRD status"
+    - "current readiness overview"
+    - "key decisions"
+    - "open questions"
+    - "recent observation state"
+
+current_state_contract:
+  path: "workspaces/<workspace>/.pmagent/current-state.json"
+  role: "structured machine-readable current-state source for backend, CLI, and future shell"
+  required_fields:
+    - "project"
+    - "project_ref"
+    - "observation_ref"
+    - "workspace"
+    - "phase"
+    - "active_step"
+    - "pending_user_decision"
+    - "next_recommended_step"
+    - "recommended_skills"
+    - "artifacts"
+    - "observation"
+    - "observation_tracking"
+    - "readiness"
+    - "candidate_review"
+    - "debates"
+    - "debate_review"
+    - "debate_launch"
+    - "updated_at"
+
+debate_contract:
+  role: "parallel debate side-channel for exposing convergence, divergences, and unexpected findings before canonical decisions"
+  storage_root: "workspaces/<workspace>/context/debates/<topic>/"
+  protocol: "markdown-first"
+  executor_config_path: "config/debate-executors.yaml"
+  protocol_notes:
+    - "round outputs are canonical markdown artifacts (`round-N-{pro,con}.md`)"
+    - "synthesis is canonical markdown artifact (`synthesis.md`)"
+    - "JSON is compatibility fallback only, not the primary execution contract"
+    - "pmagent init ships a default `config/debate-executors.yaml`; users may override executor/model choices there per machine"
+    - "when a configured executor or model is unavailable, agents should point users to `config/debate-executors.yaml` first"
+  current_state_fields:
+    - "debates"
+    - "debate_review"
+    - "debate_launch"
+  main_flow_surfaces:
+    - "pmagent start"
+    - "pmagent resume"
+    - "pmagent next"
+    - "pmagent review"
+    - "session_bootstrap"
+    - "state_surface"
+  review_owner_commands:
+    - "pmagent debate review --workspace <workspace> --topic <topic>"
+    - "pmagent debate resolve --workspace <workspace> --topic <topic> --accepted|--rejected|--deferred"
+  current_p0_guards:
+    - "debate visibility in session_bootstrap/state_surface"
+    - "canonical doc boundary protection for prd/** and Requirement.md"
+  not_yet_implemented:
+    - "debate consumed auto-marking"
+    - "bash-level debate review gate"
+    - "opportunity-trigger hooks across workflow phases"
+    - "stop-stage debate structure validation"
+
+presentation_contract:
+  score_visibility: required
+  render_format: markdown_tables
+  prose_only_forbidden_for_score_objects: true
+  depth_retention_required: true
+  score_bearing_keys:
+    - "score"
+    - "scores"
+    - "dimensions"
+    - "target_dimension"
+    - "threshold"
+    - "gates"
+    - "blocking_gates"
+  score_bearing_objects:
+    - "readiness"
+    - "candidate_review.assessment"
+    - "cards[*].scores"
+    - "maintenance_readiness"
+  response_requirements:
+    - "show raw scores before prose summary"
+    - "show per-dimension scores whenever dimensions exist"
+    - "do not reduce explanation depth because tables are long"
+    - "tables supplement analysis; they never replace reasoning or next-step guidance"
+
+requirement_document_contract:
+  path: "workspaces/<workspace>/Requirement.md"
+  role: "stable requirement consensus document owned by the external Agent rather than a per-turn dialogue log"
+  authorship:
+    owner: "external Agent"
+    cli_body_writes_forbidden: true
+    workspace_init_seed_only: true
+  source_materials:
+    - "workspaces/<workspace>/context/clarifying-log.md"
+    - "workspaces/<workspace>/research/research-log.md"
+    - "workspaces/<workspace>/decisions/"
+    - "workspaces/<workspace>/strategy/"
+  companion_document: "workspaces/<workspace>/workspace-summary.md"
+  companion_boundary: "Requirement.md stores stable requirement consensus; workspace-summary.md stores current status, navigation, and compressed summary"
+
+guided_entrypoints:
+  status_command: "pmagent status"
+  state_command: "pmagent status --json"
+  route_command: "pmagent route"
+  review_command: "pmagent review"
+  start_command: "pmagent start"
+  next_command: "pmagent next"
+  resume_command: "pmagent resume"
+  debate_start_command: "pmagent debate start --workspace <workspace> --thesis <thesis> --axis <axis>"
+  debate_status_command: "pmagent debate status --workspace <workspace>"
+  debate_review_command: "pmagent debate review --workspace <workspace> --topic <topic>"
+  debate_resolve_command: "pmagent debate resolve --workspace <workspace> --topic <topic> --accepted|--rejected|--deferred"
+  prd_status_command: "pmagent prd status"
+  prd_review_command: "pmagent prd review"
+  prd_challenge_command: "pmagent prd challenge"
+  prd_init_command: "pmagent prd init-draft"
+  phase_status_commands:
+    clarifying: "pmagent clarify status --workspace <workspace> --json"
+    researching: "pmagent research status --workspace <workspace> --json"
+    delivery: "pmagent prd status --workspace <workspace> --json"
+    maintaining: "pmagent observe maintenance-status --workspace <workspace> --json"
+  phase_transition_commands:
+    clarifying_to_researching: "pmagent research start --workspace <workspace> --json"
+  active_step_status_commands:
+    candidate_review: "pmagent observe review --workspace <workspace> --json"
+
+skill_navigation:
+  router_source: "current-state.recommended_skills + AGENTS.md skill contract"
+  rule: "skills are advisory navigation choices, not a runtime mode lock"
+  mainline_skills:
+    write_requirement:
+      skill_path: "skills/steps/write-requirement/skill.md"
+    do_research:
+      skill_path: "skills/steps/do-research/skill.md"
+    write_strategy:
+      skill_path: "skills/steps/write-strategy/skill.md"
+    write_decision:
+      skill_path: "skills/steps/write-decision/skill.md"
+    write_prd:
+      skill_path: "skills/steps/write-prd/skill.md"
+    challenge_prd:
+      skill_path: "skills/steps/challenge-prd/skill.md"
+    dev_readiness:
+      skill_path: "skills/steps/dev-readiness/skill.md"
+      execution_owner: "external-agent"
+      cli_boundary: "PMAgent CLI may inspect slices and record run evidence, but must not generate semantic dev-plan/slice content."
+    dev_run_record:
+      skill_path: "skills/steps/dev-run-record/skill.md"
+  session_review_skills:
+    candidate_review:
+      skill_path: "skills/steps/candidate-review/skill.md"
+    run_observation:
+      skill_path: "skills/steps/run-observation/skill.md"
+      trigger: "pmagent observe run agent_handoff_required"
+      writes_directly:
+        - "observations/<project>/runs/<run_id>/raw-findings.jsonl"
+      canonical_write_command: "pmagent observe ingest --project <project> --run-id <run_id> --findings <path>"
+
+default_execution_chain:
+  - "workspace-init"
+  - "observe run --project"
+  - "observe audit"
+  - "review"
+  - "set-cadence"
+  - "maintenance"
+  - "export"
+
+gate_index:
+  hard_workflow:
+    - audit_gate
+    - review_gate
+    - cadence_gate
+    - maintenance_gate
+    - observation_boundary_gate
+    - summary_sync_gate
+    - requirement_authorship_gate
+    - debate_boundary_gate
+  agent_determinism:
+    - scoring_conservatism_gate
+    - state_first_gate
+    - backlog_visibility_gate
+    - debate_visibility_gate

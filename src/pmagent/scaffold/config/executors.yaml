@@ -1,0 +1,31 @@
+﻿schema_version: 2
+
+executors:
+  claude:
+    kind: cli
+    command: claude
+    supports_session: true
+  codex:
+    kind: cli
+    command: codex
+    supports_session: true
+  kiro:
+    kind: cli
+    command: kiro-cli
+    supports_session: false
+
+defaults:
+  debate:
+    defender:
+      exec: claude
+      model: null
+    attacker:
+      exec: claude
+      model: null
+    synthesizer:
+      exec: claude
+      model: null
+  observation:
+    backend: auto
+    model: null
+

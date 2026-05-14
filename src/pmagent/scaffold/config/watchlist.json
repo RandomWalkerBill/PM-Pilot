@@ -1,0 +1,98 @@
+{
+  "output_dir": "research/daily-digest",
+  "domain_presets": {
+    "ai": {
+      "prefer_domains": ["arxiv.org", "openai.com", "anthropic.com", "deepmind.google", "huggingface.co", "paperswithcode.com", "github.com", "research.microsoft.com"],
+      "exclude_domains": ["bilibili.com", "zhihu.com", "weibo.com"],
+      "max_per_domain": 2
+    },
+    "product": {
+      "prefer_domains": ["producthunt.com", "g2.com", "capterra.com", "ycombinator.com", "techcrunch.com", "a16z.com", "crunchbase.com"],
+      "exclude_domains": ["bilibili.com", "zhihu.com"],
+      "max_per_domain": 2
+    },
+    "fintech": {
+      "prefer_domains": ["finextra.com", "thebanker.com", "pymnts.com", "stripe.com", "a16z.com"],
+      "exclude_domains": ["bilibili.com", "zhihu.com"],
+      "max_per_domain": 2
+    },
+    "design": {
+      "prefer_domains": ["nngroup.com", "smashingmagazine.com", "figma.com", "dribbble.com", "medium.com"],
+      "exclude_domains": [],
+      "max_per_domain": 2
+    },
+    "general": {
+      "prefer_domains": [],
+      "exclude_domains": ["bilibili.com", "zhihu.com", "weibo.com"],
+      "max_per_domain": 3
+    }
+  },
+  "defaults": {
+    "count": 8,
+    "freshness": "pd",
+    "summary": true,
+    "safesearch": "moderate",
+    "country": "US",
+    "search_lang": "en",
+    "ui_lang": "en-US",
+    "domain_policy": {
+      "prefer_domains": [
+        "arxiv.org",
+        "openai.com",
+        "anthropic.com",
+        "deepmind.google",
+        "ai.googleblog.com",
+        "developer.nvidia.com",
+        "huggingface.co",
+        "pytorch.org",
+        "tensorflow.org",
+        "github.com",
+        "paperswithcode.com",
+        "aclanthology.org",
+        "semanticscholar.org",
+        "thegradient.pub",
+        "research.microsoft.com",
+        "microsoft.com",
+        "aws.amazon.com",
+        "cloud.google.com",
+        "kubernetes.io"
+      ],
+      "exclude_domains": [
+        "bilibili.com",
+        "zhihu.com",
+        "weibo.com",
+        "k.sina.com.cn",
+        "36kr.com"
+      ],
+      "max_per_domain": 2
+    }
+  },
+  "use_answers_cn": false,
+  "translate_to_zh": true,
+  "watchlist": [
+    {
+      "name": "AI Agent / Agent Memory",
+      "query": "AI agent memory long-term memory retrieval RAG tool use multi-agent benchmark",
+      "freshness": "pd",
+      "count": 8,
+      "summary": true,
+      "use_answers_cn": false
+    },
+    {
+      "name": "PM Agent",
+      "query": "\"PM agent\" OR \"product manager agent\" OR \"AI PRD\" OR \"AI backlog\"",
+      "freshness": "pw",
+      "count": 8,
+      "summary": true,
+      "use_answers_cn": false
+    },
+    {
+      "name": "多模态 / Multimodal",
+      "query": "multimodal agent VLM voice UI",
+      "freshness": "pd",
+      "count": 8,
+      "summary": true,
+      "use_answers_cn": false
+    }
+  ]
+}
