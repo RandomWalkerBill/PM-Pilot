@@ -1,5 +1,6 @@
 .jj/
 .DS_Store
+.env
 __pycache__/
 *.py[cod]
 .pytest_cache/

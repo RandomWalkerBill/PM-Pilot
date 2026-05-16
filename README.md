@@ -59,6 +59,13 @@ pmagent init --dir ~/pm-data
 
 这一步只需要做一次。它会准备好项目知识库、workspace 结构、skills、templates 和运行时配置。
 
+初始化会同时生成两个配置文件：
+
+- `.env.example`：可提交的配置样例，用来给团队同步需要哪些环境变量。
+- `.env`：本机私密配置文件，只在目标目录缺失时自动创建；已有 `.env` 会被保留，不会覆盖密钥。
+
+`.env` 会从 `.env.example` 派生生成，安装包和源码仓库不需要携带 `scaffold/.env`。如果你之前遇到过类似 `FileNotFoundError: .../scaffold/.env` 的初始化错误，更新到包含该修复的版本后重新执行 `pmagent init --dir ~/pm-data` 即可。
+
 ### 2. 在 Agent 会话里让它接管当前项目上下文
 
 你可以直接在 Claude Code / Codex 里打开data目录 输入下述内容：
@@ -139,7 +146,7 @@ pmagent export --project <project> --workspace <workspace>
 - `OPENAI_API_KEY`：部分 retrieval / linking / planning 能力可用
 - `OPENROUTER_API_KEY`：可替代部分 OpenAI 调用
 
-`pmagent init` 会在数据目录下生成 `.env` 和可提交的 `.env.example`；`pmagent upgrade` 会刷新 `.env.example`，但不会覆盖本机私密 `.env`。
+`pmagent init` 会在数据目录下生成 `.env` 和可提交的 `.env.example`；`pmagent upgrade` 会刷新 `.env.example`，但不会覆盖本机私密 `.env`。正常使用时只需要编辑数据目录里的 `.env`，不要在源码目录或 scaffold 目录里维护真实密钥。
 
 ## 进一步阅读
 

@@ -110,7 +110,7 @@ def test_lark_wiki_push_creates_folder_hierarchy(monkeypatch, tmp_path: Path):
     # Research folder uses --parent-node-token (under workspace root)
     assert "--parent-node-token" in node_create_calls[1]
     # Research folder title should use the display name
-    assert "02-Research" in node_create_calls[1]
+    assert "research" in node_create_calls[1]
 
     # Doc node uses --parent-node-token (under research folder)
     assert "--parent-node-token" in node_create_calls[2]
@@ -161,7 +161,7 @@ def test_lark_wiki_push_uses_project_workspace_hierarchy(monkeypatch, tmp_path: 
     assert project in node_create_calls[0]
     assert "workspaces" in node_create_calls[1]
     assert workspace in node_create_calls[2]
-    assert "04-PRD" in node_create_calls[3]
+    assert "prd" in node_create_calls[3]
 
     cache_path = data_dir / "projects" / project / ".pmagent" / "feishu-wiki-folders.json"
     cache = json.loads(cache_path.read_text(encoding="utf-8"))

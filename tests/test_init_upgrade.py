@@ -5,6 +5,7 @@ import uuid
 from pathlib import Path
 
 from pmagent import __version__, cli
+from pmagent import cli_scaffold
 
 
 def _make_test_dir(name: str) -> Path:
@@ -222,6 +223,28 @@ def test_upgrade_refreshes_mainline_assets_and_preserves_user_added_files(monkey
         assert custom_template.read_text(encoding="utf-8") == "# custom template\n"
     finally:
         shutil.rmtree(data_dir, ignore_errors=True)
+
+
+def test_init_creates_env_when_scaffold_env_template_is_absent(monkeypatch):
+    data_dir = _make_test_dir("test-init-no-scaffold-env")
+    partial_scaffold = _make_test_dir("test-scaffold-without-env")
+    monkeypatch.setattr(cli, "write_global_config", lambda **kwargs: data_dir)
+    try:
+        shutil.copytree(cli_scaffold._scaffold_root(), partial_scaffold, dirs_exist_ok=True)
+        (partial_scaffold / ".env").unlink(missing_ok=True)
+        monkeypatch.setattr(cli_scaffold, "_scaffold_root", lambda: partial_scaffold)
+
+        assert cli.cmd_init(argparse.Namespace(dir=str(data_dir))) == 0
+
+        env_text = (data_dir / ".env").read_text(encoding="utf-8")
+        assert "PMAgent PM Data runtime config." in env_text
+        assert "PMAgent PM Data runtime config example." not in env_text
+        assert "Do not put real secrets in this example file." not in env_text
+        assert "PMAGENT_FEISHU_APP_ID=<feishu-app-id>" in env_text
+        assert (data_dir / ".env.example").exists()
+    finally:
+        shutil.rmtree(data_dir, ignore_errors=True)
+        shutil.rmtree(partial_scaffold, ignore_errors=True)
 
 
 def test_upgrade_refreshes_changed_managed_section_even_when_version_matches(monkeypatch):

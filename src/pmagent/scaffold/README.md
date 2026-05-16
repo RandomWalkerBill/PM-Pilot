@@ -90,7 +90,7 @@ observations/<project>/
 - 创建运行所需目录
 - 写入全局 `data_dir`
 - 复制托管 scaffold 文件
-- 创建可提交的 `.env.example` 配置样例；仅在 `.env` 缺失时创建本机私密 `.env`
+- 创建可提交的 `.env.example` 配置样例；仅在 `.env` 缺失时，从 `.env.example` 派生创建本机私密 `.env`
 - 同步打包内置的 `skills/` 和 `templates/`
 
 `pmagent init` 不会直接创建：
@@ -100,6 +100,8 @@ observations/<project>/
 - `workspaces/<workspace>/maintenance/`
 
 这些目录由 `workspace-init` 或 observation 初始化逻辑按需创建。
+
+`pmagent init` 不依赖源码或安装包里的 `scaffold/.env`，这个文件也不应该保存真实密钥。正常使用时只需要编辑当前数据目录下的 `.env`；如果重新执行 `init`，已有 `.env` 会原样保留。
 
 `pmagent upgrade` 会刷新托管 scaffold、配置模板、`.env.example` 和打包内置 assets，但会保留用户手工新增的 skills / templates / 数据文件；`.env` 作为本机私密配置不会被覆盖。
 

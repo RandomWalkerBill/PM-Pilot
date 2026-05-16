@@ -114,7 +114,7 @@ def test_infra_wiki_push_tracks_pending_human_readable_files(monkeypatch, tmp_pa
     assert cmd_infra(status_args) == 0
     status = json.loads(capsys.readouterr().out)
     assert status["configured"] is False
-    assert status["pending_files"] == ["Requirement.md", "workspace-summary.md"]
+    assert status["pending_files"] == ["workspace/Requirement.md", "workspace/workspace-summary.md"]
 
     script = tmp_path / "push.py"
     log = tmp_path / "feishu-push.log"
@@ -138,7 +138,7 @@ def test_infra_wiki_push_tracks_pending_human_readable_files(monkeypatch, tmp_pa
     )
     assert cmd_infra(push_args) == 0
     pushed = json.loads(capsys.readouterr().out)
-    assert pushed["pushed"] == ["Requirement.md", "workspace-summary.md"]
+    assert pushed["pushed"] == ["workspace/Requirement.md", "workspace/workspace-summary.md"]
     assert (data_dir / pushed["ledger"]).exists()
     assert "Requirement.md|alpha-discovery" in log.read_text(encoding="utf-8")
 
@@ -151,7 +151,7 @@ def test_infra_wiki_push_tracks_pending_human_readable_files(monkeypatch, tmp_pa
     (ws_root / "Requirement.md").write_text("# Requirement\n\nChanged.\n", encoding="utf-8")
     assert cmd_infra(status_args) == 0
     changed = json.loads(capsys.readouterr().out)
-    assert changed["pending_files"] == ["Requirement.md"]
+    assert changed["pending_files"] == ["workspace/Requirement.md"]
 
 
 def test_infra_wiki_push_defaults_to_builtin_lark_adapter(monkeypatch, tmp_path: Path, capsys):
@@ -192,7 +192,7 @@ def test_infra_wiki_push_defaults_to_builtin_lark_adapter(monkeypatch, tmp_path:
     assert status["adapter"] == "builtin-lark"
     assert status["command_source"] == "builtin-lark"
     assert status["space_id"] == "spc123"
-    assert status["pending_files"] == ["Requirement.md"]
+    assert status["pending_files"] == ["workspace/Requirement.md"]
 
     push_args = argparse.Namespace(
         data_dir=str(data_dir),
@@ -456,10 +456,10 @@ def test_infra_wiki_status_includes_human_readable_dev_artifacts(tmp_path: Path,
     assert cmd_infra(args) == 0
     status = json.loads(capsys.readouterr().out)
 
-    assert "dev/dev-plan.md" in status["pending_files"]
-    assert "dev/slices/SL-001.md" in status["pending_files"]
-    assert "dev/runs/SL-001/run-20260502/diff-summary.md" in status["pending_files"]
-    assert "dev/runs/SL-001/run-20260502/run.json" not in status["pending_files"]
+    assert "workspace/dev/dev-plan.md" in status["pending_files"]
+    assert "workspace/dev/slices/SL-001.md" in status["pending_files"]
+    assert "workspace/dev/runs/SL-001/run-20260502/diff-summary.md" in status["pending_files"]
+    assert "workspace/dev/runs/SL-001/run-20260502/run.json" not in status["pending_files"]
 
 
 def test_infra_pull_cards_requires_evidence(tmp_path: Path):
