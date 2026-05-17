@@ -19,6 +19,7 @@ from .cli_helpers import _infer_project_for_workspace, _resolve_workspace_contex
 from .current_state import sync_current_state
 from .observation.cards import _update_queue_summary
 from .observation.paths import candidate_updates_root, project_root, workspace_root
+from .observation.review_queue import candidate_card_exists, candidate_card_ids
 from .paths import resolve_data_dir
 
 
@@ -63,6 +64,11 @@ GITHUB_REMOTE_ENV = "PMAGENT_GITHUB_REMOTE"
 GIT_USER_NAME_ENV = "PMAGENT_GIT_USER_NAME"
 GIT_USER_EMAIL_ENV = "PMAGENT_GIT_USER_EMAIL"
 DEFAULT_FEISHU_WIKI_SPACE_ID = "my_library"
+FEISHU_WIKI_TARGET_HIERARCHY = {
+    "project": "<project>/<project-relative-file>",
+    "workspace": "<project>/workspaces/<workspace>/<workspace-relative-file>",
+    "cards_base": "<project>/Cards Base",
+}
 
 BASE_CARD_FIELDS = [
     "card_id",
@@ -239,7 +245,8 @@ def _builtin_lark_wiki_push_command(data_dir: Path) -> tuple[str, str] | None:
     )
     command = (
         f"{_shell_arg(sys.executable)} -m pmagent.ops.lark_wiki_push "
-        '--file "{file}" --relative "{relative}" --workspace "{workspace}" --project "{project}" --data-dir "{data_dir}" '
+        '--file "{file}" --relative "{relative}" --workspace "{workspace}" --project "{project}" '
+        '--scope "{scope}" --data-dir "{data_dir}" '
         f"--space-id {_shell_arg(space_id)}"
     )
     return command, space_id
@@ -352,10 +359,20 @@ def _base_config(
         or str(project_infra.get("cards_table_id") or "").strip()
         or _env_or_file(data_dir, FEISHU_CARDS_TABLE_ID_ENV)
     )
-    if not resolved_base:
-        raise SystemExit(f"{FEISHU_BASE_APP_TOKEN_ENV} is not configured")
-    if not resolved_table:
-        raise SystemExit(f"{FEISHU_CARDS_TABLE_ID_ENV} is not configured")
+    if not resolved_base or not resolved_table:
+        project_label = project or "<project>"
+        raise SystemExit(
+            "\n".join(
+                [
+                    f"No Cards Base is configured for project={project_label}.",
+                    "",
+                    "Run one of:",
+                    "- pmagent infra auth-guide --brand lark --app-id <approved-app-id> --json",
+                    f"- pmagent infra bootstrap --project {project_label} --json",
+                    f"- pmagent infra bootstrap --project {project_label} --adopt-existing-base --base-token <base-app-token> --table-id <table-id> --json",
+                ]
+            )
+        )
     return resolved_base, resolved_table
 
 
@@ -920,6 +937,7 @@ def _format_push_command(
     data_dir: Path,
     project: str,
     workspace: str,
+    scope: str,
     relative: str,
     file_path: Path,
 ) -> str:
@@ -927,6 +945,7 @@ def _format_push_command(
         data_dir=str(data_dir),
         project=project,
         workspace=workspace,
+        scope=scope,
         relative=relative,
         file=str(file_path),
     )
@@ -966,6 +985,7 @@ def wiki_push(
                 data_dir=data_dir,
                 project=project,
                 workspace=workspace,
+                scope=sync_items[key]["scope"],
                 relative=sync_items[key]["relative"],
                 file_path=sync_items[key]["path"],
             ),
@@ -1106,10 +1126,13 @@ def write_infra_protocol(
                 "- Default adapter: `python -m pmagent.ops.lark_wiki_push` when `lark-cli` is available and configured.",
                 f"- Built-in Wiki space env: `{FEISHU_WIKI_SPACE_ID_ENV}` (default `{DEFAULT_FEISHU_WIKI_SPACE_ID}`).",
                 f"- Optional custom command env: `{FEISHU_WIKI_PUSH_COMMAND_ENV}`.",
-                "- Wiki target hierarchy: `<project>/workspaces/<workspace>/<relative-file>`.",
+                "- Wiki target hierarchy:",
+                "  - Project files: `<project>/<project-relative-file>`.",
+                "  - Workspace files: `<project>/workspaces/<workspace>/<workspace-relative-file>`.",
+                "  - Cards Base: `<project>/Cards Base`.",
                 "- Built-in node mapping: `projects/<project>/.pmagent/feishu-wiki-nodes.jsonl`.",
                 "- Custom commands are invoked once per pending file.",
-                "- Custom placeholders: `{file}`, `{relative}`, `{workspace}`, `{project}`, `{data_dir}`.",
+                "- Custom placeholders: `{file}`, `{relative}`, `{workspace}`, `{project}`, `{scope}`, `{data_dir}`.",
                 "- Push success is recorded in `workspaces/<workspace>/.pmagent/feishu-sync-ledger.json`.",
                 "",
             ]
@@ -1171,8 +1194,8 @@ def write_infra_protocol(
             "default_space_id": DEFAULT_FEISHU_WIKI_SPACE_ID,
             "push_command_env": FEISHU_WIKI_PUSH_COMMAND_ENV,
             "push_command_env_role": "optional custom adapter override",
-            "push_command_template_placeholders": ["file", "relative", "workspace", "project", "data_dir"],
-            "target_hierarchy": "<project>/workspaces/<workspace>/<relative-file>",
+            "push_command_template_placeholders": ["file", "relative", "workspace", "project", "scope", "data_dir"],
+            "target_hierarchy": FEISHU_WIKI_TARGET_HIERARCHY,
             "node_mapping": "projects/<project>/.pmagent/feishu-wiki-nodes.jsonl",
             "push_triggers": ["session_end", "phase_handoff", "manual"],
             "sync_status_command": "pmagent infra sync-status --workspace <workspace> --json",
@@ -1333,6 +1356,7 @@ def _import_candidate_cards(
     cards: list[Any],
     project: str | None,
     workspace: str | None,
+    strict: bool = True,
 ) -> dict[str, Any]:
     project, workspace = _project_workspace(data_dir, project, workspace)
     if not project or not workspace:
@@ -1342,10 +1366,19 @@ def _import_candidate_cards(
     inbox.mkdir(parents=True, exist_ok=True)
     imported: list[str] = []
     skipped: list[str] = []
+    validation_errors: list[dict[str, str]] = []
     for raw_card in cards:
         if not isinstance(raw_card, dict):
             continue
-        _validate_candidate_card(raw_card)
+        try:
+            _validate_candidate_card(raw_card)
+        except SystemExit as exc:
+            if strict:
+                raise
+            card_id = str(raw_card.get("card_id") or "").strip() or "<unknown>"
+            skipped.append(card_id)
+            validation_errors.append({"card_id": card_id, "error": str(exc)})
+            continue
         card_id = _card_id(raw_card)
         target = _target(raw_card)
         lifecycle = _lifecycle(raw_card)
@@ -1355,20 +1388,31 @@ def _import_candidate_cards(
         if lifecycle.get("status") != "inbox":
             skipped.append(card_id)
             continue
-        card_path = inbox / f"{_slug(card_id)}.md"
+        slug = _slug(card_id)
+        if candidate_card_exists(data_dir, workspace, card_id, slug):
+            skipped.append(card_id)
+            continue
+        card_path = inbox / f"{slug}.md"
         card_path.write_text(_card_markdown(raw_card, project=project, workspace=workspace), encoding="utf-8")
         imported.append(_rel(data_dir, card_path))
 
     _update_queue_summary(repo_root=data_dir, workspace=workspace)
+    pending_card_ids = candidate_card_ids(data_dir, workspace, "inbox")
+    pending_review = bool(pending_card_ids)
     state = sync_current_state(
         data_dir,
         workspace,
         patch={
-            "active_step": "candidate-review" if imported else None,
-            "pending_user_decision": "candidate-review" if imported else None,
+            "active_step": "candidate-review" if pending_review else None,
+            "pending_user_decision": "candidate-review" if pending_review else None,
+            "observation_tracking": {
+                "project": project,
+                "pending_card_ids": pending_card_ids,
+                "last_card_pull_at": _utc_now(),
+            },
             "next_recommended_step": {
-                "id": "review_candidates" if imported else "observe_run",
-                "reason": "Feishu Base Candidate Cards were pulled into local inbox." if imported else "No matching inbox cards were imported.",
+                "id": "review_candidates" if pending_review else "pull_base_cards",
+                "reason": "Feishu Base Candidate Cards are available in the local inbox." if pending_review else "No matching inbox cards were imported.",
             },
         },
         updated_by="infra-pull-cards",
@@ -1378,6 +1422,7 @@ def _import_candidate_cards(
         "workspace": workspace,
         "imported": imported,
         "skipped_card_ids": skipped,
+        "validation_errors": validation_errors,
         "recommended_skills": state.get("recommended_skills", []),
     }
 
@@ -1435,7 +1480,7 @@ def pull_cards_from_base(
             break
         offset += len(records)
 
-    result = _import_candidate_cards(data_dir, cards=cards, project=project, workspace=workspace)
+    result = _import_candidate_cards(data_dir, cards=cards, project=project, workspace=workspace, strict=False)
     result.update(
         {
             "source": "feishu-base",

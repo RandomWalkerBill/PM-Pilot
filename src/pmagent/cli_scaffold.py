@@ -17,13 +17,8 @@ MANAGED_END = "<!-- PMAGENT:MANAGED:END -->"
 MANAGED_MARKER = "PMAGENT:MANAGED"
 MANAGED_FILES = ("AGENTS.md", "CLAUDE.md", "MEMORY.md")
 LEGACY_MANAGED_RENAMES = {"claude.md": "CLAUDE.md"}
-REFRESH_FILES = ("GOAL_STATE.md", "README.md", ".env.example")
+REFRESH_FILES = ("GOAL_STATE.md", "SUMMARY.md", "TEAM_SNAPSHOT.md", "README.md", ".env.example")
 VERSION_FILE = ".pmagent-version"
-ENV_EXAMPLE_HEADER = "# PMAgent PM Data runtime config example."
-ENV_HEADER = "# PMAgent PM Data runtime config."
-ENV_EXAMPLE_INSTRUCTION = "# Copy values into .env and fill only the integrations you use."
-ENV_INSTRUCTION = "# Fill only the integrations you use. Do not commit this file."
-ENV_EXAMPLE_SECRET_WARNING = "# Do not put real secrets in this example file."
 INIT_DIRECTORIES = (
     "memory/persona",
     "memory/global",
@@ -66,34 +61,6 @@ def _copy_scaffold_file(data_dir: Path, relative_path: str) -> None:
     target = data_dir / relative_path
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, target)
-
-
-def _initial_env_text() -> str:
-    """Create the private .env contents from the committed example template."""
-
-    example_path = _scaffold_root() / ".env.example"
-    try:
-        example_text = example_path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return f"{ENV_HEADER}\n{ENV_INSTRUCTION}\n"
-
-    transformed_lines: list[str] = []
-    for line in example_text.splitlines():
-        if line == ENV_EXAMPLE_HEADER:
-            transformed_lines.append(ENV_HEADER)
-        elif line == ENV_EXAMPLE_INSTRUCTION:
-            transformed_lines.append(ENV_INSTRUCTION)
-        elif line == ENV_EXAMPLE_SECRET_WARNING:
-            continue
-        else:
-            transformed_lines.append(line)
-    return "\n".join(transformed_lines).rstrip() + "\n"
-
-
-def _create_initial_env_file(data_dir: Path) -> None:
-    target = data_dir / ".env"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(_initial_env_text(), encoding="utf-8")
 
 
 def _copy_host_agent_file(data_dir: Path, relative_path: str) -> str:
@@ -393,7 +360,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     for rel in INIT_DIRECTORIES:
         (data_dir / rel).mkdir(parents=True, exist_ok=True)
 
-    for filename in MANAGED_FILES + ("GOAL_STATE.md",):
+    for filename in MANAGED_FILES + ("GOAL_STATE.md", "SUMMARY.md", "TEAM_SNAPSHOT.md"):
         target = data_dir / filename
         if target.exists():
             content = target.read_text(encoding="utf-8")
@@ -429,7 +396,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     env_path = data_dir / ".env"
     if not env_path.exists():
-        _create_initial_env_file(data_dir)
+        _copy_scaffold_file(data_dir, ".env")
         print("  created .env")
     else:
         print("  SKIP .env (exists, user secrets preserved)")

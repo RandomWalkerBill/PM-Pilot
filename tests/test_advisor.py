@@ -578,6 +578,104 @@ def test_infra_pull_cards_from_feishu_base(monkeypatch, tmp_path: Path, capsys):
     assert payload["read_records"] == 1
     assert payload["imported"] == [f"workspaces/{workspace}/candidate-updates/inbox/openclaw-base-001.md"]
 
+    assert cmd_infra(args) == 0
+    duplicate_payload = json.loads(capsys.readouterr().out)
+    assert duplicate_payload["imported"] == []
+    assert duplicate_payload["skipped_card_ids"] == ["openclaw-base-001"]
+
+
+def test_infra_pull_cards_from_base_skips_invalid_rows(monkeypatch, tmp_path: Path, capsys):
+    data_dir = tmp_path / "pm-data"
+    workspace = "alpha-discovery"
+    (data_dir / "config").mkdir(parents=True)
+    (data_dir / "workspaces" / workspace).mkdir(parents=True)
+    (data_dir / "config" / "projects.json").write_text(
+        json.dumps(
+            {
+                "active_project": "alpha",
+                "active_workspace": workspace,
+                "projects": {"alpha": {"workspaces": [workspace]}},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def fake_lark(_data_dir_arg: Path, _args: list[str]):
+        return {
+            "records": [
+                {
+                    "record_id": "rec001",
+                    "fields": {
+                        "card_id": "invalid-base-001",
+                        "source_type": "efficiency",
+                        "target_project": "alpha",
+                        "target_workspace": workspace,
+                        "title": "Invalid Base card",
+                        "body": "Missing source_ref.",
+                        "evidence": "run evidence",
+                        "suggested_action": "Skip this card.",
+                        "urgency": "normal",
+                        "status": "inbox",
+                        "created_at": "2026-05-03T00:00:00Z",
+                    },
+                }
+            ]
+        }
+
+    monkeypatch.setattr("pmagent.infra._run_lark_cli_json", fake_lark)
+    args = argparse.Namespace(
+        data_dir=str(data_dir),
+        subcommand="pull-cards",
+        from_base=True,
+        from_file=None,
+        base_token="app_token",
+        table_id="tbl001",
+        project=None,
+        workspace=workspace,
+        json=True,
+    )
+
+    assert cmd_infra(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["imported"] == []
+    assert payload["skipped_card_ids"] == ["invalid-base-001"]
+    assert payload["validation_errors"][0]["card_id"] == "invalid-base-001"
+    assert "source_ref" in payload["validation_errors"][0]["error"]
+
+
+def test_infra_pull_cards_from_base_missing_config_guides_bootstrap(tmp_path: Path):
+    data_dir = tmp_path / "pm-data"
+    workspace = "alpha-discovery"
+    (data_dir / "config").mkdir(parents=True)
+    (data_dir / "workspaces" / workspace).mkdir(parents=True)
+    (data_dir / "config" / "projects.json").write_text(
+        json.dumps(
+            {
+                "active_project": "alpha",
+                "active_workspace": workspace,
+                "projects": {"alpha": {"workspaces": [workspace]}},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    args = argparse.Namespace(
+        data_dir=str(data_dir),
+        subcommand="pull-cards",
+        from_base=True,
+        from_file=None,
+        base_token=None,
+        table_id=None,
+        project=None,
+        workspace=workspace,
+        json=True,
+    )
+
+    with pytest.raises(SystemExit, match="No Cards Base is configured for project=alpha"):
+        cmd_infra(args)
+
 
 def test_infra_push_feedback_to_feishu_base(monkeypatch, tmp_path: Path, capsys):
     data_dir = tmp_path / "pm-data"

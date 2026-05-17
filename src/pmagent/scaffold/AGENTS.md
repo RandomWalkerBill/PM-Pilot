@@ -61,9 +61,9 @@ PMAgent 源码仓库只是 CLI / scaffold，不承载项目主链路规范。
 
 ## 会话规则
 
-- 当存在 active workspace 时，正式工作前先执行 `pmagent observe audit --workspace <workspace> --run-catch-up --json`
-- 当 observation 仍是 unresolved 时，在 `workspace-init/start` 后以及进入 PRD 前，显式询问用户是否开启 observation；如果开启，再确认 cadence
-- 如果存在未读 observation，先显式告知用户，再进入 `candidate-review`
+- 当存在 active workspace 时，正式工作前先执行 `pmagent observe audit --workspace <workspace> --run-catch-up --json`；该入口会优先从 Feishu Base 拉取 Candidate Cards 并刷新 review 状态。
+- `candidate-review` 的主来源是 `workspaces/<workspace>/candidate-updates/inbox/*.md`；`observations/<project>/index.json` 只作为 legacy/local-only 兼容来源。
+- 如果存在待审 Candidate Card 或 legacy unread observation，先显式告知用户，再进入 `candidate-review`。
 - 如果 `.pmagent/current-state.json` 中存在 debate failed / pending review / pending launch，先显式 surface 再继续普通流程；优先使用 `pmagent start|resume|next|review --json` 或 hooks 注入结果作为前台入口
 - 当当前目录是 `jj` 仓库时，再运行 `jj status`；需要时运行 `jj diff --git`
 - 不要静默推进 workflow；先回显状态，再执行
@@ -74,17 +74,17 @@ PMAgent 源码仓库只是 CLI / scaffold，不承载项目主链路规范。
 - 首次配置飞书应用时，先跑 `pmagent infra auth-guide --brand lark --app-id <approved-app-id>` 生成最小权限授权命令；不要直接无 scope 执行 `lark-cli auth login`，避免申请全量权限。
 - 改动人可读白名单文件后，先跑 `pmagent infra sync-status --workspace <workspace> --json`。
 - 有 `pending_files` 且 adapter 可用时，必须先主动询问用户是否同步到飞书 Wiki；用户确认后再跑 `pmagent infra wiki-push --workspace <workspace> --json`。默认使用内置 lark adapter（检测到可用且已配置的 `lark-cli`），自定义空间用 `PMAGENT_FEISHU_WIKI_SPACE_ID`，自定义推送策略才用 `PMAGENT_FEISHU_WIKI_PUSH_COMMAND`；ledger 是成功证据。
-- 新 project 的飞书基础设施由 `pmagent infra bootstrap --project <project> --json` 创建或绑定；目标层级是 `<project>/workspaces/<workspace>`，Cards Base 是 project 级资源。
+- 新 project 的飞书基础设施由 `pmagent infra bootstrap --project <project> --json` 创建或绑定；目标层级是 project 文件在 `<project>/` 下、Cards Base 与 `workspaces/` 在 `<project>` 下平级、workspace 文件在 `<project>/workspaces/<workspace>/` 下。
 - 有 `pending_files` 但无可用 lark adapter / custom command 时，状态块标记 `feishu_sync_pending` 并列出文件；不得声称已同步飞书。
-- Base 卡片只走 `infra pull-cards` / `infra review-card`，不走 Wiki push。
+- Base 卡片只走 `infra pull-cards --from-base` / `infra review-card` / `infra push-feedback`，不走 Wiki push。
 
 ## Hard Workflow Gates
 
 以下规则是运行时边界，违反即行为错误：
 
-1. **audit_gate**：进入 workspace 正式工作前先跑 audit
-2. **review_gate**：observation accept / reject / snooze 需要用户确认
-3. **cadence_gate**：cadence 变更需要用户确认
+1. **audit_gate**：进入 workspace 正式工作前先跑 audit，主行为是 pull Base cards + review pending cards
+2. **review_gate**：Candidate Card accept / reject / snooze 需要用户确认
+3. **cadence_gate**：legacy local observation cadence 变更需要用户确认
 4. **maintenance_gate**：只有 accepted 信号进入 maintenance
 5. **observation_boundary_gate**：Observation 不直接改 PRD
 6. **summary_sync_gate**：`workspace-summary.md` 与 current-state 必须同步
@@ -96,7 +96,7 @@ PMAgent 源码仓库只是 CLI / scaffold，不承载项目主链路规范。
 以下规则保证 agent 行为稳定、可预测：
 
 1. **state_first_gate**：下一轮问题、建议、review 判断前先刷新状态
-2. **backlog_visibility_gate**：有未读 observation 时必须先 surface
+2. **backlog_visibility_gate**：有待审 Candidate Card 或 legacy unread observation 时必须先 surface
 3. **scoring_conservatism_gate**：readiness 评分必须保守，不允许随意浮点夸大
 4. **debate_visibility_gate**：当存在 debate failed / pending review / pending launch 时，先 surface 该状态，再继续推进主流程
 
@@ -300,18 +300,19 @@ pmagent dev lesson-review --workspace <workspace> --json
 pmagent observe audit --workspace <workspace> --run-catch-up --json
 pmagent observe review --workspace <workspace>
 pmagent observe maintenance-status --workspace <workspace>
-pmagent observe run --project <project>
+pmagent observe run --project <project>  # legacy/local-only
 pmagent observe unread --workspace <workspace>
 pmagent observe mark-read --workspace <workspace> --ids <observation-id>...
 pmagent observe accept|reject|snooze ...
-pmagent observe enable --project <project> --cadence daily --confirm-cadence
-pmagent observe set-cadence --project <project> --cadence weekly --confirm-cadence
+pmagent observe enable --project <project> --cadence daily --confirm-cadence  # legacy/local-only
+pmagent observe set-cadence --project <project> --cadence weekly --confirm-cadence  # legacy/local-only
 pmagent observe disable --project <project>
 pmagent observe draft-maintenance --workspace <workspace>
 pmagent observe apply-maintenance --workspace <workspace>
 pmagent infra protocol --workspace <workspace>
 pmagent infra sync-status --workspace <workspace> --json
 pmagent infra wiki-push --workspace <workspace> --json
+pmagent infra pull-cards --from-base --workspace <workspace> --json
 pmagent infra pull-cards --from <cards.json> --workspace <workspace>
 pmagent infra review-card --workspace <workspace> --card <card-id> --status accepted|rejected|snoozed
 cat config/debate-executors.yaml

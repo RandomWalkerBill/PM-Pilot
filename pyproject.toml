@@ -37,6 +37,7 @@ pmagent = [
   "templates/*.md",
   "ops/**/*",
   "vendor/*.js",
+  "scaffold/.env",
   "scaffold/.env.example",
   "scaffold/.gitignore",
   "scaffold/**/*",

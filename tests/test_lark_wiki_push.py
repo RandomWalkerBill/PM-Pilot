@@ -109,7 +109,7 @@ def test_lark_wiki_push_creates_folder_hierarchy(monkeypatch, tmp_path: Path):
 
     # Research folder uses --parent-node-token (under workspace root)
     assert "--parent-node-token" in node_create_calls[1]
-    # Research folder title should use the display name
+    # Research folder title should mirror the local directory name.
     assert "research" in node_create_calls[1]
 
     # Doc node uses --parent-node-token (under research folder)
@@ -168,12 +168,96 @@ def test_lark_wiki_push_uses_project_workspace_hierarchy(monkeypatch, tmp_path: 
     assert f"project/{project}" in cache
     assert f"project/{project}/workspaces" in cache
     assert f"project/{project}/workspaces/{workspace}" in cache
-    assert f"{project}/workspaces/{workspace}/prd" in cache
+    assert f"project/{project}/workspaces/{workspace}/prd" in cache
 
     log_path = data_dir / "projects" / project / ".pmagent" / "feishu-wiki-nodes.jsonl"
     rows = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
     assert rows[-1]["project"] == project
     assert rows[-1]["workspace"] == workspace
+
+
+def test_lark_wiki_push_uses_project_scope_as_project_sibling(monkeypatch, tmp_path: Path):
+    calls: list[list[str]] = []
+    node_counter = {"n": 0}
+
+    def fake_run_json(args: list[str], *, input_text: str | None = None):
+        calls.append(list(args))
+        if args[:2] == ["wiki", "+node-create"]:
+            node_counter["n"] += 1
+            n = node_counter["n"]
+            return _make_node_payload(f"wikcn_{n}", f"obj_{n}", f"https://example.invalid/wiki/{n}")
+        if args[:2] == ["docs", "+update"]:
+            return {"data": {"revision_id": 1}}
+        raise AssertionError(f"unexpected: {args}")
+
+    monkeypatch.setattr(lark_wiki_push, "_run_json", fake_run_json)
+    data_dir = tmp_path / "pm-data"
+    project = "alpha"
+    workspace = "alpha-discovery"
+    file_path = data_dir / "projects" / project / "research" / "market.md"
+    file_path.parent.mkdir(parents=True)
+    file_path.write_text("# Market\n\nContent.\n", encoding="utf-8")
+
+    result = lark_wiki_push.push_file_to_wiki(
+        file_path=file_path,
+        relative="research/market.md",
+        project=project,
+        workspace=workspace,
+        scope="project",
+        space_id="my_library",
+        data_dir=data_dir,
+    )
+
+    assert result["scope"] == "project"
+    node_create_calls = [c for c in calls if c[:2] == ["wiki", "+node-create"]]
+    assert len(node_create_calls) == 3
+    assert project in node_create_calls[0]
+    assert "workspaces" not in node_create_calls[1]
+    assert "research" in node_create_calls[1]
+
+    cache_path = data_dir / "projects" / project / ".pmagent" / "feishu-wiki-folders.json"
+    cache = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert f"project/{project}" in cache
+    assert f"project/{project}/research" in cache
+    assert f"project/{project}/workspaces" not in cache
+
+
+def test_lark_wiki_push_reuses_project_node_from_infra(monkeypatch, tmp_path: Path):
+    calls: list[list[str]] = []
+
+    def fake_run_json(args: list[str], *, input_text: str | None = None):
+        calls.append(list(args))
+        if args[:2] == ["wiki", "+node-create"]:
+            return _make_node_payload("created_node", "created_obj", "https://example.invalid/wiki/created")
+        if args[:2] == ["docs", "+update"]:
+            return {"data": {"revision_id": 1}}
+        raise AssertionError(f"unexpected: {args}")
+
+    monkeypatch.setattr(lark_wiki_push, "_run_json", fake_run_json)
+    data_dir = tmp_path / "pm-data"
+    project = "alpha"
+    workspace = "alpha-discovery"
+    infra_path = data_dir / "projects" / project / ".pmagent" / "feishu-infra.json"
+    infra_path.parent.mkdir(parents=True)
+    infra_path.write_text(json.dumps({"project_node_token": "existing_project_node"}), encoding="utf-8")
+    file_path = data_dir / "workspaces" / workspace / "Requirement.md"
+    file_path.parent.mkdir(parents=True)
+    file_path.write_text("# Requirement\n\nContent.\n", encoding="utf-8")
+
+    lark_wiki_push.push_file_to_wiki(
+        file_path=file_path,
+        relative="Requirement.md",
+        project=project,
+        workspace=workspace,
+        space_id="my_library",
+        data_dir=data_dir,
+    )
+
+    node_create_calls = [c for c in calls if c[:2] == ["wiki", "+node-create"]]
+    assert len(node_create_calls) == 3
+    assert project not in node_create_calls[0]
+    assert "workspaces" in node_create_calls[0]
+    assert ["--parent-node-token", "existing_project_node"] == node_create_calls[0][-2:]
 
 
 def test_lark_wiki_push_reuses_folder_cache(monkeypatch, tmp_path: Path):

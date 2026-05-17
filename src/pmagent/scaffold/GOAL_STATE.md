@@ -1,24 +1,32 @@
 # GOAL_STATE
 
-> 用途：作为短期“工作记忆/目标锚点”，降低多轮对话中的目标漂移。
+> PM Data 根目录的全局注意力锚点。它不替代任何 workspace-summary.md。
 
-## 当前目标（1-3 条）
+## Updated At
 
-- 
 
-## 近期里程碑（可选）
+## 当前全局目标
 
-- 
+-
 
-## 下一步行动（<= 5 条）
+## 当前重点 Workspaces
 
-- 
+| workspace | project | priority | reason | status |
+| --- | --- | --- | --- | --- |
 
-## 阻塞与风险
+## 暂不展开
 
-- 
+| workspace/project | reason |
+| --- | --- |
 
-## 开放问题（一次只保留最关键的 1-3 个）
+## 当前最大风险
 
-- 
+-
 
+## 下一步行动
+
+-
+
+## 备注
+
+- 本文件是全局目标锚点，不替代任何 workspace-summary.md。

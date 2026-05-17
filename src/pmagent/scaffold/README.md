@@ -90,7 +90,7 @@ observations/<project>/
 - 创建运行所需目录
 - 写入全局 `data_dir`
 - 复制托管 scaffold 文件
-- 创建可提交的 `.env.example` 配置样例；仅在 `.env` 缺失时，从 `.env.example` 派生创建本机私密 `.env`
+- 创建可提交的 `.env.example` 配置样例；仅在 `.env` 缺失时创建本机私密 `.env`
 - 同步打包内置的 `skills/` 和 `templates/`
 
 `pmagent init` 不会直接创建：
@@ -101,33 +101,7 @@ observations/<project>/
 
 这些目录由 `workspace-init` 或 observation 初始化逻辑按需创建。
 
-`pmagent init` 不依赖源码或安装包里的 `scaffold/.env`，这个文件也不应该保存真实密钥。正常使用时只需要编辑当前数据目录下的 `.env`；如果重新执行 `init`，已有 `.env` 会原样保留。
-
 `pmagent upgrade` 会刷新托管 scaffold、配置模板、`.env.example` 和打包内置 assets，但会保留用户手工新增的 skills / templates / 数据文件；`.env` 作为本机私密配置不会被覆盖。
-
-## `.env` 配置速查
-
-基础 PM workflow 不要求你立刻填写 `.env`。只有启用模型调用、GitHub 镜像、飞书同步这些外部集成时，才需要填对应变量。
-
-| 变量 | 什么时候需要 | 作用 |
-| --- | --- | --- |
-| `PMAGENT_AGENT_BACKEND` | 可选；需要指定 observation 委托执行器时 | 指定外部 Agent 后端，可设为 `auto` / `kiro` / `kiro-cli` / `claude` / `codex`。不填时默认自动探测。 |
-| `OPENAI_API_KEY` | 可选；启用直接模型调用时 | 给 retrieval / linking / planning 等直接调用 OpenAI API 的能力使用。只用基础 workflow 可以不填。 |
-| `OPENROUTER_API_KEY` | 可选；用 OpenRouter 替代部分模型调用时 | 作为部分 OpenAI 调用路径的替代 provider key。 |
-| `PMAGENT_GITHUB_REMOTE` | 可选；启用 GitHub PM Data 镜像时 | 远端 PM Data Git 仓库地址，供 infra / advisor runtime 同步读取。 |
-| `PMAGENT_GIT_USER_NAME` | 可选；需要 CLI 代写 Git commit 身份时 | 覆盖 Git 提交用户名。 |
-| `PMAGENT_GIT_USER_EMAIL` | 可选；需要 CLI 代写 Git commit 身份时 | 覆盖 Git 提交邮箱。 |
-| `PMAGENT_FEISHU_APP_ID` | 可选；启用飞书 Wiki / Base 集成时 | 飞书应用 ID。首次授权应先用 `pmagent infra auth-guide --brand lark --app-id <app-id>` 生成最小权限命令。 |
-| `PMAGENT_FEISHU_APP_SECRET` | 可选；启用飞书集成时 | 飞书应用密钥。 |
-| `PMAGENT_FEISHU_BASE_APP_TOKEN` | 可选；启用 Candidate Cards Base 时 | 飞书多维表格 app token，用作建议卡片中转。 |
-| `PMAGENT_FEISHU_CARDS_TABLE_ID` | 可选；启用 Candidate Cards Base 时 | Candidate Cards 表 ID。 |
-| `PMAGENT_FEISHU_WIKI_SPACE_ID` | 可选；启用飞书 Wiki mirror 时 | 目标 Wiki 空间 ID；默认可用 `my_library`。 |
-| `PMAGENT_FEISHU_WIKI_PUSH_COMMAND` | 可选；只有自定义 Wiki push adapter 时 | 覆盖内置 lark adapter。大多数用户不需要设置。 |
-
-还有两个常用但默认不写进 `.env.example` 的环境变量：
-
-- `PMAGENT_DATA_DIR`：覆盖默认数据目录；通常 `pmagent init --dir <path>` 已经会写入全局配置，不必再手动设置。
-- `BRAVE_SEARCH_API_KEY`：`search`、`digest` 等直接搜索命令需要；`observe run` 默认委托外部 Agent 执行检索，通常不必先填。
 
 ## 当前状态入口
 

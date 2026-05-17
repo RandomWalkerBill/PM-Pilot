@@ -21,6 +21,7 @@ from .observation.paths import (
     workspace_summary_path,
 )
 from .observation.profile import cadence_interval, catch_up_due, load_profile, parse_utc, utc_now
+from .observation.review_queue import candidate_card_counts, candidate_card_ids
 from .readiness import infer_phase_readiness
 from .observation.summary_protocol import (
     build_observation_section,
@@ -280,8 +281,10 @@ def _observation_index(repo_root: Path, project: str | None) -> dict[str, Any]:
 def _workspace_observation_tracking(project: str | None) -> dict[str, Any]:
     return {
         "project": project,
+        "pending_card_ids": [],
         "seen_observation_ids": [],
         "pending_observation_ids": [],
+        "last_card_pull_at": None,
         "last_observation_sync_at": None,
     }
 
@@ -339,8 +342,9 @@ def _recommended_skills_for_state(state: dict[str, Any]) -> list[dict[str, Any]]
     pending = str(state.get("pending_user_decision") or "").strip()
     next_step = state.get("next_recommended_step", {})
     next_id = str(next_step.get("id") or "").strip() if isinstance(next_step, dict) else ""
+    candidate_review = state.get("candidate_review") if isinstance(state.get("candidate_review"), dict) else {}
 
-    if pending == "candidate-review" or active_step == "candidate-review" or next_id == "review_candidates":
+    if pending == "candidate-review" or active_step == "candidate-review" or next_id == "review_candidates" or bool(candidate_review.get("active")):
         return [
             _skill(
                 "candidate-review",
@@ -432,11 +436,12 @@ def _observation_snapshot(repo_root: Path, workspace: str) -> dict[str, Any]:
         last_run = {}
     queue_summary = _read_json(queue_summary_path(repo_root, workspace)) or {}
     counts = queue_summary.get("counts", {})
+    file_counts = candidate_card_counts(repo_root, workspace)
     queue = {
-        "inbox": int(counts.get("inbox", 0)),
-        "accepted": int(counts.get("accepted", 0)),
-        "rejected": int(counts.get("rejected", 0)),
-        "snoozed": int(counts.get("snoozed", 0)),
+        "inbox": int(file_counts.get("inbox", counts.get("inbox", 0))),
+        "accepted": int(file_counts.get("accepted", counts.get("accepted", 0))),
+        "rejected": int(file_counts.get("rejected", counts.get("rejected", 0))),
+        "snoozed": int(file_counts.get("snoozed", counts.get("snoozed", 0))),
     }
 
     enabled = bool(profile.get("enabled", False))
@@ -705,26 +710,31 @@ def preview_current_state(
     all_ids = [str(item) for item in index.get("observation_ids", []) if str(item).strip()]
     seen_ids = [str(item) for item in tracking.get("seen_observation_ids", []) if str(item).strip()]
     pending_ids = [item for item in all_ids if item not in seen_ids]
+    pending_card_ids = candidate_card_ids(repo_root, workspace, "inbox")
     tracking["project"] = state.get("project")
+    tracking["pending_card_ids"] = pending_card_ids
     tracking["pending_observation_ids"] = pending_ids
     state["observation_tracking"] = tracking
     observation = state.get("observation", {}) if isinstance(state.get("observation"), dict) else {}
     queue = observation.get("queue", {}) if isinstance(observation.get("queue"), dict) else {}
-    queue["inbox"] = len(pending_ids)
+    queue["inbox"] = len(pending_card_ids) + len(pending_ids)
     observation["queue"] = queue
-    observation["needs_review"] = bool(pending_ids)
+    observation["needs_review"] = bool(pending_card_ids or pending_ids)
     state["observation"] = observation
     accepted = _safe_int(queue.get("accepted"))
+    pending_count = len(pending_card_ids) + len(pending_ids)
     candidate_review_active = (
         state.get("active_step") == "candidate-review"
         or state.get("pending_user_decision") == "candidate-review"
-        or bool(pending_ids)
+        or bool(pending_count)
     )
     if candidate_review_active:
         state["candidate_review"] = {
             "active": True,
-            "inbox_count": len(pending_ids),
+            "inbox_count": pending_count,
             "accepted_count": accepted,
+            "primary_source": "candidate-updates" if pending_card_ids else "legacy_observation",
+            "legacy_observation_count": len(pending_ids),
         }
     else:
         state["candidate_review"] = None
@@ -764,7 +774,7 @@ def preview_current_state(
         "executors": existing_debate_launch.get("executors") if isinstance(existing_debate_launch.get("executors"), dict) else {},
         "config_path": existing_debate_launch.get("config_path"),
     }
-    maintenance_step = _maintenance_next_step(repo_root, workspace, accepted=accepted, pending_count=len(pending_ids))
+    maintenance_step = _maintenance_next_step(repo_root, workspace, accepted=accepted, pending_count=pending_count)
     if maintenance_step:
         state["phase"] = "maintaining"
         state["active_step"] = "draft-maintenance"
