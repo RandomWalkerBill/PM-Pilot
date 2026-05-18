@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from .current_state import preview_current_state
+from .goal_state import build_goal_state_checkpoint
 from .presentation import build_guided_output
 from .paths import resolve_data_dir
 from .cli_helpers import _infer_project_for_workspace, _load_projects_config, _resolve_workspace_context
@@ -16,6 +17,11 @@ def _status_payload(data_dir: Path, *, workspace: str | None = None) -> dict:
     project, resolved_workspace = _resolve_workspace_context(data_dir, workspace=workspace)
     state = preview_current_state(data_dir, resolved_workspace)
     state["project"] = project or state.get("project")
+    state["goal_state_checkpoint"] = build_goal_state_checkpoint(
+        data_dir,
+        workspace=resolved_workspace,
+        project=state.get("project"),
+    )
     return state
 
 
@@ -141,6 +147,10 @@ def _command_for_next_step(step_id: object, workspace: object) -> str:
         return "pmagent prd status"
     if step == "review_candidates":
         return f"pmagent observe review --workspace {workspace_name}"
+    if step == "pull_base_cards":
+        return f"pmagent infra pull-cards --from-base --workspace {workspace_name} --json"
+    if step == "infra_bootstrap":
+        return "pmagent infra bootstrap --project <project> --json"
     if step in {"observe_audit", "observe_run"}:
         return f"pmagent observe audit --workspace {workspace_name} --run-catch-up --json"
     if step in {"draft_maintenance", "apply_maintenance"}:
@@ -229,6 +239,7 @@ def _detail_lines_for_status(payload: dict, route_context: dict) -> list[str]:
     queue = observation.get("queue", {}) if isinstance(observation.get("queue"), dict) else {}
     debates = payload.get("debates", {}) if isinstance(payload.get("debates"), dict) else {}
     debate_review = payload.get("debate_review", {}) if isinstance(payload.get("debate_review"), dict) else {}
+    goal_checkpoint = payload.get("goal_state_checkpoint", {}) if isinstance(payload.get("goal_state_checkpoint"), dict) else {}
     return [
         f"- workspace: {_string_or_dash(payload.get('workspace'))}",
         f"- project: {_string_or_dash(payload.get('project'))}",
@@ -249,6 +260,9 @@ def _detail_lines_for_status(payload: dict, route_context: dict) -> list[str]:
         f"- debate_latest_topic: {_string_or_dash(debates.get('latest_topic'))}",
         f"- debate_latest_failed_topic: {_string_or_dash(debates.get('latest_failed_topic'))}",
         f"- debate_review_topics: {_string_or_dash(debate_review.get('awaiting_review_topics'))}",
+        f"- goal_state_checkpoint: {_string_or_dash(goal_checkpoint.get('checkpoint'))}",
+        f"- goal_state_severity: {_string_or_dash(goal_checkpoint.get('severity'))}",
+        f"- goal_state_prompt: {_string_or_dash(goal_checkpoint.get('prompt'))}",
     ]
 
 

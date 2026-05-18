@@ -3,7 +3,7 @@ import shutil
 import sys
 import uuid
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Iterator
 
@@ -144,6 +144,24 @@ def _seed_projects_config(data_dir: Path, *, active_project: str = "demo", activ
                 }
             },
         },
+    )
+
+
+def _seed_status_workspace(data_dir: Path, *, project: str = "alpha", workspace: str = "alpha-observe") -> None:
+    _seed_projects_config(data_dir, active_project=project, active_workspace=workspace)
+    (data_dir / "projects" / project).mkdir(parents=True, exist_ok=True)
+    workspace_root = data_dir / "workspaces" / workspace
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "Requirement.md").write_text("# Requirement\n", encoding="utf-8")
+    sync_current_state(
+        data_dir,
+        workspace,
+        patch={
+            "project": project,
+            "phase": "clarifying",
+            "active_step": "write-requirement",
+        },
+        updated_by="test",
     )
 
 
@@ -1876,6 +1894,168 @@ def test_workspace_init_scaffolds_project_workspace_and_observation(monkeypatch)
         assert current_state["readiness"]["phase"] == "clarifying"
         assert "target_dimension" not in current_state["readiness"]
         assert current_state["readiness"]["score"] == 0.0
+
+
+def test_status_returns_goal_state_empty_template_checkpoint(capsys):
+    with _workspace_dir("goal-state-empty-status") as data_dir:
+        _seed_status_workspace(data_dir)
+        (data_dir / "GOAL_STATE.md").write_text(
+            "\n".join(
+                [
+                    "# GOAL_STATE",
+                    "",
+                    "## Updated At",
+                    "",
+                    "",
+                    "## 当前全局目标",
+                    "",
+                    "-",
+                    "",
+                    "## 当前重点 Workspaces",
+                    "",
+                    "| workspace | project | priority | reason | status |",
+                    "| --- | --- | --- | --- | --- |",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        assert cli.main(["status", "--data-dir", str(data_dir), "--workspace", "alpha-observe", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+
+        checkpoint = payload["payload"]["goal_state_checkpoint"]
+        assert checkpoint["checkpoint"] == "empty_template"
+        assert checkpoint["severity"] == "required"
+        assert "空模板" in checkpoint["prompt"]
+
+
+def test_status_goal_state_parses_multi_workspace_focus(capsys):
+    with _workspace_dir("goal-state-focused-status") as data_dir:
+        _seed_status_workspace(data_dir)
+        (data_dir / "GOAL_STATE.md").write_text(
+            "\n".join(
+                [
+                    "# GOAL_STATE",
+                    "",
+                    "## Updated At",
+                    "",
+                    date.today().isoformat(),
+                    "",
+                    "## 当前全局目标",
+                    "",
+                    "- 稳定 PMA 基础设施协议",
+                    "",
+                    "## 当前重点 Workspaces",
+                    "",
+                    "| workspace | project | priority | reason | status |",
+                    "| --- | --- | --- | --- | --- |",
+                    "| alpha-observe | alpha | P0 | 当前实现 | active |",
+                    "| beta-observe | beta | P1 | 后续验证 | planned |",
+                    "",
+                    "## 暂不展开",
+                    "",
+                    "| workspace/project | reason |",
+                    "| --- | --- |",
+                    "| gamma | 非本周目标 |",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        assert cli.main(["status", "--data-dir", str(data_dir), "--workspace", "alpha-observe", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+
+        checkpoint = payload["payload"]["goal_state_checkpoint"]
+        assert checkpoint["checkpoint"] is None
+        assert checkpoint["focus_workspaces"] == ["alpha-observe", "beta-observe"]
+
+
+def test_status_goal_state_warns_when_workspace_is_deferred(capsys):
+    with _workspace_dir("goal-state-deferred-status") as data_dir:
+        _seed_status_workspace(data_dir)
+        (data_dir / "GOAL_STATE.md").write_text(
+            "\n".join(
+                [
+                    "# GOAL_STATE",
+                    "",
+                    "## Updated At",
+                    "",
+                    date.today().isoformat(),
+                    "",
+                    "## 当前全局目标",
+                    "",
+                    "- 稳定 PMA 基础设施协议",
+                    "",
+                    "## 当前重点 Workspaces",
+                    "",
+                    "| workspace | project | priority | reason | status |",
+                    "| --- | --- | --- | --- | --- |",
+                    "| beta-observe | beta | P1 | 后续验证 | planned |",
+                    "",
+                    "## 暂不展开",
+                    "",
+                    "| workspace/project | reason |",
+                    "| --- | --- |",
+                    "| alpha-observe | 本周不展开 |",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        assert cli.main(["status", "--data-dir", str(data_dir), "--workspace", "alpha-observe", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+
+        checkpoint = payload["payload"]["goal_state_checkpoint"]
+        assert checkpoint["checkpoint"] == "workspace_deferred"
+        assert checkpoint["severity"] == "warning"
+
+
+def test_status_goal_state_daily_and_weekly_stale_checkpoints(capsys):
+    with _workspace_dir("goal-state-stale-status") as data_dir:
+        _seed_status_workspace(data_dir)
+        goal_state = data_dir / "GOAL_STATE.md"
+        goal_state.write_text(
+            "\n".join(
+                [
+                    "# GOAL_STATE",
+                    "",
+                    "## Updated At",
+                    "",
+                    (date.today() - timedelta(days=1)).isoformat(),
+                    "",
+                    "## 当前全局目标",
+                    "",
+                    "- 稳定 PMA 基础设施协议",
+                    "",
+                    "## 当前重点 Workspaces",
+                    "",
+                    "| workspace | project | priority | reason | status |",
+                    "| --- | --- | --- | --- | --- |",
+                    "| alpha-observe | alpha | P0 | 当前实现 | active |",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        assert cli.main(["status", "--data-dir", str(data_dir), "--workspace", "alpha-observe", "--json"]) == 0
+        daily_payload = json.loads(capsys.readouterr().out)
+        assert daily_payload["payload"]["goal_state_checkpoint"]["checkpoint"] == "daily_confirm"
+
+        goal_state.write_text(
+            goal_state.read_text(encoding="utf-8").replace(
+                (date.today() - timedelta(days=1)).isoformat(),
+                (date.today() - timedelta(days=8)).isoformat(),
+            ),
+            encoding="utf-8",
+        )
+
+        assert cli.main(["status", "--data-dir", str(data_dir), "--workspace", "alpha-observe", "--json"]) == 0
+        weekly_payload = json.loads(capsys.readouterr().out)
+        assert weekly_payload["payload"]["goal_state_checkpoint"]["checkpoint"] == "weekly_review"
 
 
 def test_workspace_init_text_output_includes_status_block(monkeypatch, capsys):

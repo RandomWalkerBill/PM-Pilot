@@ -67,6 +67,46 @@ def _write_observation(repo_root: Path, project: str, observation_id: str, *, ti
     (files_root / f"{observation_id}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def _write_candidate_card(repo_root: Path, workspace: str, card_id: str, *, title: str = "Base card") -> Path:
+    inbox = repo_root / "workspaces" / workspace / "candidate-updates" / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    path = inbox / f"{card_id}.md"
+    path.write_text(
+        "\n".join(
+            [
+                "---",
+                "schema_version: 1",
+                f"card_id: {card_id}",
+                "source_type: efficiency",
+                "source_ref: openclaw-run",
+                "project: alpha",
+                f"workspace: {workspace}",
+                "status: inbox",
+                "urgency: normal",
+                "created_at: 2026-05-03T00:00:00Z",
+                "---",
+                "",
+                "# Candidate Card",
+                "",
+                f"## {title}",
+                "",
+                "Imported from Feishu Base.",
+                "",
+                "## Suggested Action",
+                "",
+                "Review the imported card.",
+                "",
+                "## Evidence",
+                "",
+                "workspaces/alpha-observe/dev/runs/SL-001/diff-summary.md",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 def test_init_profile_creates_project_observation_scaffold():
     with _workspace_dir("observe-init") as repo_root:
         assert _run_observation(repo_root, "init-profile", "--project", "alpha") == 0
@@ -104,9 +144,37 @@ def test_parallel_state_sync_keeps_summary_markers_valid():
 
         summary_path = workspace_root / "workspace-summary.md"
         assert inspect_summary(summary_path).state == "valid"
+        summary_text = summary_path.read_text(encoding="utf-8")
+        for heading in [
+            "## Current Goal",
+            "## Current State",
+            "## Current PRD",
+            "## Readiness Overview",
+            "## Recent Observation",
+        ]:
+            assert summary_text.splitlines().count(heading) == 1
         assert json.loads(current_state_path(repo_root, "alpha-observe").read_text(encoding="utf-8"))["workspace"] == "alpha-observe"
         assert not list(workspace_root.rglob("*.lock"))
         assert not list(workspace_root.rglob("*.tmp"))
+
+
+def test_summary_lint_rejects_duplicated_core_heading():
+    with _workspace_dir("summary-duplicated-heading") as repo_root:
+        summary_path = repo_root / "workspaces" / "alpha-observe" / "workspace-summary.md"
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(
+            build_workspace_summary_document(workspace="alpha-observe").replace(
+                "## Current State",
+                "## Current State\n\n## Current State",
+                1,
+            ),
+            encoding="utf-8",
+        )
+
+        status = inspect_summary(summary_path)
+
+        assert status.state == "invalid_headings"
+        assert "## Current State" in status.reason
 
 
 def test_load_current_state_retries_transient_permission_error(monkeypatch):
@@ -214,6 +282,43 @@ def test_review_payload_uses_unread_project_observations(monkeypatch, capsys):
         assert "- Queue summary: inbox=1 accepted=0 rejected=0 snoozed=0" in summary
         assert "- Needs review: yes" in summary
         assert "- Candidate updates: 1" in summary
+
+
+def test_review_payload_prefers_candidate_update_cards_over_legacy_observations(capsys):
+    with _workspace_dir("observe-review-base-first") as repo_root:
+        _seed_projects_config(repo_root, project="alpha", workspace="alpha-observe")
+        (repo_root / "projects" / "alpha").mkdir(parents=True, exist_ok=True)
+        (repo_root / "workspaces" / "alpha-observe").mkdir(parents=True, exist_ok=True)
+        assert _run_observation(repo_root, "init-profile", "--project", "alpha") == 0
+        assert _run_observation(repo_root, "bootstrap-workspace", "--workspace", "alpha-observe") == 0
+        capsys.readouterr()
+
+        _write_candidate_card(repo_root, "alpha-observe", "base-card-1", title="Base relay card")
+        _write_observation(repo_root, "alpha", "obs-1", title="Legacy observation", summary="Legacy summary.")
+        (repo_root / "observations" / "alpha" / "index.json").write_text(
+            json.dumps(
+                {"schema_version": 1, "project": "alpha", "observation_ids": ["obs-1"], "updated_at": "2026-04-15T00:00:00Z"},
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        assert _run_observation(repo_root, "review", "--workspace", "alpha-observe", "--json") == 0
+        payload = json.loads(capsys.readouterr().out)
+
+        assert payload["counts"]["inbox"] == 2
+        assert payload["counts"]["legacy_observation"] == 1
+        assert payload["candidate_review"]["primary_source"] == "candidate-updates"
+        assert payload["candidate_review"]["legacy_observation_count"] == 1
+        assert [card["card"] for card in payload["cards"]] == ["base-card-1", "obs-1"]
+        assert payload["cards"][0]["source"] == "candidate-updates"
+        assert payload["cards"][1]["source"] == "legacy_observation"
+        current = _read_json(repo_root / "workspaces" / "alpha-observe" / ".pmagent" / "current-state.json")
+        assert current["candidate_review"]["inbox_count"] == 2
+        assert current["observation_tracking"]["pending_card_ids"] == ["base-card-1"]
+        assert current["observation_tracking"]["pending_observation_ids"] == ["obs-1"]
 
 
 def test_review_and_maintenance_text_outputs_render_score_tables(capsys):
@@ -372,7 +477,7 @@ def test_executor_facade_exports_run_dry_run():
     assert "run_dry_run" in observation_executor.__all__
 
 
-def test_audit_run_catch_up_invokes_runner(monkeypatch, capsys):
+def test_audit_run_catch_up_invokes_base_pull(monkeypatch, capsys):
     with _workspace_dir("observe-catch-up") as repo_root:
         _seed_projects_config(repo_root, project="alpha", workspace="alpha-observe")
         (repo_root / "projects" / "alpha").mkdir(parents=True, exist_ok=True)
@@ -395,13 +500,37 @@ def test_audit_run_catch_up_invokes_runner(monkeypatch, capsys):
         policy_payload["catch_up_policy"] = "auto"
         policy_path.write_text(json.dumps(policy_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-        calls: list[tuple[Path, str]] = []
-        monkeypatch.setattr(
-            "pmagent.observation.executor.run_live",
-            lambda repo_root, project: calls.append((repo_root, project)) or 0,
-        )
+        calls: list[tuple[Path, str, str]] = []
+
+        def fake_pull(repo_root_arg: Path, *, project: str | None, workspace: str | None, **_kwargs):
+            calls.append((repo_root_arg, str(project), str(workspace)))
+            _write_candidate_card(repo_root_arg, str(workspace), "base-card-1", title="Pulled Base card")
+            return {"source": "feishu-base", "imported": [f"workspaces/{workspace}/candidate-updates/inbox/base-card-1.md"]}
+
+        monkeypatch.setattr("pmagent.infra.pull_cards_from_base", fake_pull)
 
         assert _run_observation(repo_root, "audit", "--workspace", "alpha-observe", "--run-catch-up", "--json") == 0
         payload = json.loads(capsys.readouterr().out)
         assert payload["catch_up_performed"] is True
-        assert calls == [(repo_root, "alpha")]
+        assert payload["pending_card_ids"] == ["base-card-1"]
+        assert payload["queue_counts"]["inbox"] == 1
+        assert calls == [(repo_root, "alpha", "alpha-observe")]
+
+
+def test_audit_run_catch_up_surfaces_missing_base_guidance(capsys):
+    with _workspace_dir("observe-catch-up-missing-base") as repo_root:
+        _seed_projects_config(repo_root, project="alpha", workspace="alpha-observe")
+        (repo_root / "projects" / "alpha").mkdir(parents=True, exist_ok=True)
+        (repo_root / "workspaces" / "alpha-observe").mkdir(parents=True, exist_ok=True)
+        assert _run_observation(repo_root, "init-profile", "--project", "alpha") == 0
+        assert _run_observation(repo_root, "bootstrap-workspace", "--workspace", "alpha-observe") == 0
+        capsys.readouterr()
+
+        assert _run_observation(repo_root, "audit", "--workspace", "alpha-observe", "--run-catch-up", "--json") == 0
+        payload = json.loads(capsys.readouterr().out)
+
+        assert payload["catch_up_performed"] is False
+        assert payload["base_setup"]["status"] == "missing-cards-base"
+        assert "pmagent infra bootstrap --project alpha --json" in payload["base_setup"]["commands"]
+        current = _read_json(repo_root / "workspaces" / "alpha-observe" / ".pmagent" / "current-state.json")
+        assert current["next_recommended_step"]["id"] == "infra_bootstrap"

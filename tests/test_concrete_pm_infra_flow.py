@@ -132,7 +132,11 @@ def test_external_agent_dev_slice_to_infra_card_feedback_flow(tmp_path: Path, ca
     assert manifest["feishu_wiki"]["default_adapter"] == "builtin-lark"
     assert manifest["feishu_wiki"]["space_id_env"] == "PMAGENT_FEISHU_WIKI_SPACE_ID"
     assert manifest["feishu_wiki"]["node_mapping"] == "projects/<project>/.pmagent/feishu-wiki-nodes.jsonl"
-    assert manifest["feishu_wiki"]["target_hierarchy"] == "<project>/workspaces/<workspace>/<relative-file>"
+    assert manifest["feishu_wiki"]["target_hierarchy"] == {
+        "project": "<project>/<project-relative-file>",
+        "workspace": "<project>/workspaces/<workspace>/<workspace-relative-file>",
+        "cards_base": "<project>/Cards Base",
+    }
     assert manifest["feishu_wiki"]["sync_status_command"] == "pmagent infra sync-status --workspace <workspace> --json"
     assert manifest["feishu_wiki"]["manual_push_command"] == "pmagent infra wiki-push --workspace <workspace> --json"
     assert manifest["feishu_base"]["workspace_route_field"] == "target_workspace"

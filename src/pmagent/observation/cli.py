@@ -218,7 +218,7 @@ def build_parser() -> argparse.ArgumentParser:
     init_p.add_argument("--workspace", default=None)
     init_p.set_defaults(func=_cmd_init_profile)
 
-    run_p = sub.add_parser("run", help="Run project observation")
+    run_p = sub.add_parser("run", help="Run legacy/local-only project observation")
     run_p.add_argument("--project", default=None)
     run_p.add_argument("--workspace", default=None)
     run_p.add_argument("--json", action="store_true")
@@ -231,7 +231,7 @@ def build_parser() -> argparse.ArgumentParser:
     plan_p.add_argument("--json", action="store_true")
     plan_p.set_defaults(func=_cmd_plan)
 
-    ingest_p = sub.add_parser("ingest", help="Ingest Agent-produced raw observation findings")
+    ingest_p = sub.add_parser("ingest", help="Ingest legacy/local-only Agent-produced raw observation findings")
     ingest_p.add_argument("--project", default=None)
     ingest_p.add_argument("--workspace", default=None)
     ingest_p.add_argument("--run-id", required=True)
@@ -281,7 +281,7 @@ def build_parser() -> argparse.ArgumentParser:
     init_workspace_p.add_argument("--task-name", default=None)
     init_workspace_p.set_defaults(func=_cmd_init_workspace)
 
-    enable_p = sub.add_parser("enable", help="Enable scheduled observation for a project")
+    enable_p = sub.add_parser("enable", help="Enable legacy/local-only scheduled observation for a project")
     enable_p.add_argument("--project", default=None)
     enable_p.add_argument("--workspace", default=None)
     enable_p.add_argument(
@@ -298,7 +298,7 @@ def build_parser() -> argparse.ArgumentParser:
     disable_p.add_argument("--workspace", default=None)
     disable_p.set_defaults(func=_cmd_disable)
 
-    cadence_p = sub.add_parser("set-cadence", help="Update the scheduled observation cadence for a project")
+    cadence_p = sub.add_parser("set-cadence", help="Update the legacy/local-only observation cadence for a project")
     cadence_p.add_argument("--project", default=None)
     cadence_p.add_argument("--workspace", default=None)
     cadence_p.add_argument(
@@ -309,7 +309,7 @@ def build_parser() -> argparse.ArgumentParser:
     cadence_p.add_argument("--confirm-cadence", action="store_true")
     cadence_p.set_defaults(func=_cmd_set_cadence)
 
-    audit_p = sub.add_parser("audit", help="Summarize observation queue state before starting interactive work")
+    audit_p = sub.add_parser("audit", help="Pull Feishu Base cards and summarize review queue state before interactive work")
     audit_p.add_argument("--workspace", required=True)
     audit_p.add_argument("--run-catch-up", action="store_true")
     audit_p.add_argument("--json", action="store_true")

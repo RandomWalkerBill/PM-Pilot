@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -15,6 +16,13 @@ CORE_END = "<!-- PMAGENT:SUMMARY:CORE:END -->"
 OBS_BEGIN = "<!-- PMAGENT:SUMMARY:OBSERVATION:BEGIN -->"
 OBS_END = "<!-- PMAGENT:SUMMARY:OBSERVATION:END -->"
 SUMMARY_MARKERS = (CORE_BEGIN, CORE_END, OBS_BEGIN, OBS_END)
+SUMMARY_REQUIRED_HEADINGS = (
+    "## Current Goal",
+    "## Current State",
+    "## Current PRD",
+    "## Readiness Overview",
+    "## Recent Observation",
+)
 
 
 @dataclass(frozen=True)
@@ -101,6 +109,14 @@ def inspect_summary(path: Path) -> SummaryStatus:
     positions = [text.find(marker) for marker in SUMMARY_MARKERS]
     if positions != sorted(positions):
         return SummaryStatus("invalid_markers", "summary markers are out of order")
+
+    heading_counts = {heading: len(re.findall(rf"(?m)^{re.escape(heading)}\s*$", text)) for heading in SUMMARY_REQUIRED_HEADINGS}
+    duplicated = [heading for heading, count in heading_counts.items() if count != 1]
+    if duplicated:
+        return SummaryStatus(
+            "invalid_headings",
+            "summary headings are missing or duplicated: " + ", ".join(duplicated),
+        )
 
     return SummaryStatus("valid", "summary markers are valid")
 

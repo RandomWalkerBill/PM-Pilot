@@ -21,7 +21,10 @@ feishu_sync_contract:
   push_command: "pmagent infra wiki-push --workspace <workspace> --json"
   bootstrap_command: "pmagent infra bootstrap --project <project> --json"
   confirmed_sync_rule: "Ask the user before running wiki-push; do not silently sync draft edits."
-  target_hierarchy: "<project>/workspaces/<workspace>/<relative-file>"
+  target_hierarchy:
+    project: "<project>/<project-relative-file>"
+    workspace: "<project>/workspaces/<workspace>/<workspace-relative-file>"
+    cards_base: "<project>/Cards Base"
   default_adapter: "builtin-lark"
   default_adapter_command: "python -m pmagent.ops.lark_wiki_push"
   default_adapter_requires: "available and configured lark-cli"
@@ -55,7 +58,9 @@ feishu_sync_contract:
     - "candidate-updates/**"
     - "cache/**"
   pending_rule: "If pending_files is non-empty and configured=true, ask the user whether to sync now; only run push_command after confirmation. If configured=false, surface missing lark-cli/custom adapter and do not claim Feishu sync."
-  base_card_rule: "Feishu Base Candidate Cards use infra pull-cards/review-card, not wiki-push."
+  base_card_rule: "Feishu Base Candidate Cards use infra pull-cards --from-base / review-card / push-feedback, not wiki-push."
+  inbound_card_primary_source: "workspaces/<workspace>/candidate-updates/inbox/*.md"
+  legacy_observation_source: "observations/<project>/index.json is legacy/local-only and only merged into candidate-review for compatibility."
 
 state_model:
   active_project_source: "config/projects.json.active_project"
@@ -111,7 +116,7 @@ skill_resolution:
 artifacts:
   project_root: "projects/<project>/"
   workspace_root: "workspaces/<workspace>/"
-  observation_root: "observations/<project>/"
+  observation_root: "observations/<project>/ (legacy/local-only discovery source)"
   workspace_files:
     - "Requirement.md"
     - "workspace-summary.md"
@@ -302,8 +307,11 @@ skill_navigation:
   session_review_skills:
     candidate_review:
       skill_path: "skills/steps/candidate-review/skill.md"
+      primary_source: "workspaces/<workspace>/candidate-updates/inbox/*.md"
+      legacy_source: "observations/<project>/index.json unread ids"
     run_observation:
       skill_path: "skills/steps/run-observation/skill.md"
+      lifecycle: "legacy/local-only"
       trigger: "pmagent observe run agent_handoff_required"
       writes_directly:
         - "observations/<project>/runs/<run_id>/raw-findings.jsonl"
@@ -311,10 +319,10 @@ skill_navigation:
 
 default_execution_chain:
   - "workspace-init"
-  - "observe run --project"
-  - "observe audit"
+  - "infra bootstrap --project"
+  - "observe audit --run-catch-up"
   - "review"
-  - "set-cadence"
+  - "infra push-feedback"
   - "maintenance"
   - "export"
 

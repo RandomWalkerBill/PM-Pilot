@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 
 from .current_state import sync_current_state
+from .goal_state import build_goal_state_checkpoint
 from .observation.summary_protocol import build_workspace_summary_document_with_core
 from .paths import resolve_data_dir
 from .cli_helpers import (
@@ -50,7 +51,7 @@ def _ensure_project_scaffold(data_dir: Path, project: str, description: str, key
         project_file.write_text(
             "\n".join(
                 [
-                    f"# Project: {project}",
+                    "# Project Overview",
                     "",
                     f"- Description: {description or project}",
                     f"- Keywords: {keyword_text}",
@@ -304,6 +305,10 @@ def _do_switch(data_dir: Path, project: str, workspace: str) -> None:
     config["active_workspace"] = workspace
     _save_projects_config(data_dir, config)
     print(f"switched to project={project}, workspace={workspace}")
+    checkpoint = build_goal_state_checkpoint(data_dir, workspace=workspace, project=project)
+    if checkpoint.get("checkpoint"):
+        print(f"goal_state_checkpoint={checkpoint.get('checkpoint')}")
+        print(f"goal_state_prompt={checkpoint.get('prompt')}")
 
 
 def _do_list(data_dir: Path) -> None:

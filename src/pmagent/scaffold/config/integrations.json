@@ -12,7 +12,11 @@
     "wiki_space_id_env": "PMAGENT_FEISHU_WIKI_SPACE_ID",
     "default_wiki_space_id": "my_library",
     "wiki_node_mapping": "projects/<project>/.pmagent/feishu-wiki-nodes.jsonl",
-    "wiki_target_hierarchy": "<project>/workspaces/<workspace>/<relative-file>",
+    "wiki_target_hierarchy": {
+      "project": "<project>/<project-relative-file>",
+      "workspace": "<project>/workspaces/<workspace>/<workspace-relative-file>",
+      "cards_base": "<project>/Cards Base"
+    },
     "wiki_push_command_env": "PMAGENT_FEISHU_WIKI_PUSH_COMMAND",
     "wiki_push_command_env_role": "optional custom adapter override",
     "base_app_token_env": "PMAGENT_FEISHU_BASE_APP_TOKEN",

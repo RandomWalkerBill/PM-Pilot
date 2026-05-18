@@ -29,6 +29,12 @@ _TOPLEVEL_DISPLAY_NAMES: dict[str, str] = {
     "PROJECT.md": "Project Overview",
 }
 
+_PROJECT_ROOT_KEY_TEMPLATE = "project/{project}"
+_WORKSPACES_KEY_TEMPLATE = "project/{project}/workspaces"
+_WORKSPACE_ROOT_KEY_TEMPLATE = "project/{project}/workspaces/{workspace}"
+_PROJECT_FOLDER_KEY_TEMPLATE = "project/{project}/{path}"
+_WORKSPACE_FOLDER_KEY_TEMPLATE = "project/{project}/workspaces/{workspace}/{path}"
+
 
 def _lark_cli() -> str:
     executable = shutil.which("lark-cli.cmd") or shutil.which("lark-cli") or shutil.which("lark-cli.exe")
@@ -208,7 +214,7 @@ def _ensure_workspace_root(
 ) -> str:
     """Return node_token for the workspace root node, creating it if needed."""
     if project:
-        project_key = f"project/{project}"
+        project_key = _PROJECT_ROOT_KEY_TEMPLATE.format(project=project)
         if project_key in folder_cache:
             project_token = folder_cache[project_key]
         else:
@@ -218,7 +224,7 @@ def _ensure_workspace_root(
                 raise SystemExit(f"wiki node create for project root did not return node_token: {payload}")
             folder_cache[project_key] = project_token
 
-        workspaces_key = f"project/{project}/workspaces"
+        workspaces_key = _WORKSPACES_KEY_TEMPLATE.format(project=project)
         if workspaces_key in folder_cache:
             workspaces_token = folder_cache[workspaces_key]
         else:
@@ -228,7 +234,7 @@ def _ensure_workspace_root(
                 raise SystemExit(f"wiki node create for workspaces folder did not return node_token: {payload}")
             folder_cache[workspaces_key] = workspaces_token
 
-        key = f"project/{project}/workspaces/{workspace}"
+        key = _WORKSPACE_ROOT_KEY_TEMPLATE.format(project=project, workspace=workspace)
         if key in folder_cache:
             return folder_cache[key]
         payload = _create_wiki_node(workspace, parent_token=workspaces_token)
@@ -254,7 +260,7 @@ def _ensure_project_root(
     space_id: str,
     folder_cache: dict[str, str],
 ) -> str:
-    project_key = f"project/{project}"
+    project_key = _PROJECT_ROOT_KEY_TEMPLATE.format(project=project)
     if project_key in folder_cache:
         return folder_cache[project_key]
     payload = _create_wiki_node(project, space_id=space_id)
@@ -263,6 +269,30 @@ def _ensure_project_root(
         raise SystemExit(f"wiki node create for project root did not return node_token: {payload}")
     folder_cache[project_key] = token
     return token
+
+
+def _prime_project_folder_cache(
+    folder_cache: dict[str, str],
+    *,
+    project: str | None,
+    project_infra: dict[str, Any],
+) -> None:
+    """Seed folder cache from project infra so pushes reuse bootstrap-created nodes."""
+    if not project:
+        return
+    project_node_token = str(project_infra.get("project_node_token") or "").strip()
+    if project_node_token:
+        folder_cache.setdefault(_PROJECT_ROOT_KEY_TEMPLATE.format(project=project), project_node_token)
+
+
+def _folder_cache_key(*, scope: str, project: str | None, workspace: str, path: str) -> str:
+    if scope == "project":
+        if not project:
+            raise SystemExit("project scope requires --project")
+        return _PROJECT_FOLDER_KEY_TEMPLATE.format(project=project, path=path)
+    if project:
+        return _WORKSPACE_FOLDER_KEY_TEMPLATE.format(project=project, workspace=workspace, path=path)
+    return f"{workspace}/{path}"
 
 
 def _ensure_folder_node(
@@ -297,8 +327,8 @@ def _resolve_parent_node(
 
     Examples:
       "Requirement.md"            -> workspace root
-      "research/research-log.md"  -> 02-Research node
-      "dev/slices/SL-001.md"      -> 05-Dev/slices node
+      "research/research-log.md"  -> research node
+      "dev/slices/SL-001.md"      -> dev/slices node
     """
     if scope == "project":
         if not project:
@@ -317,10 +347,12 @@ def _resolve_parent_node(
     accumulated: list[str] = []
     for folder in parts[:-1]:
         accumulated.append(folder)
-        if scope == "project":
-            folder_key = f"project/{project}/" + "/".join(accumulated)
-        else:
-            folder_key = (f"{project}/workspaces/{workspace}/" if project else f"{workspace}/") + "/".join(accumulated)
+        folder_key = _folder_cache_key(
+            scope=scope,
+            project=project,
+            workspace=workspace,
+            path="/".join(accumulated),
+        )
         display_name = _FOLDER_DISPLAY_NAMES.get(folder, folder)
         parent_token = _ensure_folder_node(folder_key, display_name, parent_token, folder_cache)
 
@@ -359,6 +391,7 @@ def push_file_to_wiki(
     # Load persistent folder cache (workspace root + section folder nodes)
     folder_cache = _load_folder_cache(data_dir, workspace, project)
     project_infra = _read_project_infra(data_dir, project)
+    _prime_project_folder_cache(folder_cache, project=project, project_infra=project_infra)
 
     existing = _existing_node(data_dir, workspace, relative, project)
     if scope == "project" and relative == "PROJECT.md":

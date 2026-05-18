@@ -64,6 +64,33 @@ from .helpers import (
     _workspace_exists,
     _workspace_tracking,
 )
+from .review_queue import (
+    candidate_card_counts,
+    candidate_card_ids,
+    candidate_card_paths,
+    parse_candidate_card,
+)
+
+
+def _base_card_setup_guidance(project: str) -> dict[str, object]:
+    return {
+        "status": "missing-cards-base",
+        "message": f"No Cards Base is configured for project={project}.",
+        "commands": [
+            "pmagent infra auth-guide --brand lark --app-id <approved-app-id> --json",
+            f"pmagent infra bootstrap --project {project} --json",
+            f"pmagent infra bootstrap --project {project} --adopt-existing-base --base-token <base-app-token> --table-id <table-id> --json",
+        ],
+    }
+
+
+def _is_missing_cards_base_error(exc: SystemExit) -> bool:
+    message = str(exc)
+    return (
+        "No Cards Base is configured" in message
+        or "PMAGENT_FEISHU_BASE_APP_TOKEN is not configured" in message
+        or "PMAGENT_FEISHU_CARDS_TABLE_ID is not configured" in message
+    )
 
 
 def _candidate_review_detail_lines(payload: dict[str, object]) -> list[str]:
@@ -231,55 +258,82 @@ def audit_observation(
     }
     catch_up_needed = catch_up_due(profile, last_run if isinstance(last_run, dict) else None)
     catch_up_performed = False
+    pull_result: dict[str, object] | None = None
+    base_guidance: dict[str, object] | None = None
 
-    if run_catch_up and catch_up_needed:
-        from .executor import run_live
+    if run_catch_up:
+        try:
+            from ..infra import pull_cards_from_base
 
-        run_live(repo_root, project)
-        catch_up_performed = True
-        profile = load_profile(repo_root, project, create=True)
-        last_run = {
-            "last_run_id": profile.get("last_run_id"),
-            "updated_at": profile.get("last_run_at"),
-        }
-        catch_up_needed = catch_up_due(profile, last_run if isinstance(last_run, dict) else None)
+            pull_result = pull_cards_from_base(repo_root, project=project, workspace=workspace)
+            catch_up_performed = True
+        except SystemExit as exc:
+            if not _is_missing_cards_base_error(exc):
+                raise
+            base_guidance = _base_card_setup_guidance(project)
 
     unread_ids = _unread_observation_ids(repo_root, workspace)
     queue_summary = _read_json(queue_summary_path(repo_root, workspace))
     queue_counts = dict(queue_summary.get("counts", {}))
-    queue_counts["inbox"] = len(unread_ids)
+    queue_counts.update(candidate_card_counts(repo_root, workspace))
+    inbox_card_ids = candidate_card_ids(repo_root, workspace, "inbox")
+    total_inbox = len(inbox_card_ids) + len(unread_ids)
+    queue_counts["inbox"] = total_inbox
     payload = {
         "project": project,
         "workspace": workspace,
+        "primary_source": "candidate-updates",
+        "base_pull": pull_result,
+        "base_setup": base_guidance,
         "enabled": bool(profile.get("enabled", False)),
         "cadence": profile.get("cadence", "manual"),
         "catch_up_policy": profile.get("catch_up_policy"),
-        "catch_up_needed": catch_up_needed,
+        "catch_up_needed": bool(base_guidance) or catch_up_needed,
         "catch_up_performed": catch_up_performed,
         "scheduler": profile.get("scheduler", {}),
         "review_stats": profile.get("review_stats", {}),
         "cadence_recommendation": profile.get("cadence_recommendation", {}),
         "last_run": last_run or {},
         "queue_counts": queue_counts,
+        "pending_card_ids": inbox_card_ids,
         "unread_observation_ids": unread_ids,
-        "inbox_cards": unread_ids,
+        "legacy_observation_count": len(unread_ids),
+        "inbox_cards": inbox_card_ids + unread_ids,
         "accepted_cards": _card_names(repo_root, workspace, "accepted"),
         "snoozed_cards": _card_names(repo_root, workspace, "snoozed"),
     }
+    pending_review = total_inbox > 0
+    if base_guidance:
+        next_step = {
+            "id": "infra_bootstrap",
+            "reason": "Project Cards Base is not configured; bootstrap or bind Feishu Base before pulling inbound Candidate Cards.",
+        }
+    elif pending_review:
+        next_step = {
+            "id": "review_candidates",
+            "reason": "Inbound Candidate Cards are waiting for review.",
+        }
+    else:
+        next_step = {
+            "id": "pull_base_cards",
+            "reason": "No inbound Candidate Cards are pending; pull Feishu Base cards when you want to refresh the relay.",
+        }
     state = sync_current_state(
         repo_root,
         workspace,
         patch={
-            "active_step": "candidate-review" if unread_ids else "write-requirement",
-            "pending_user_decision": "candidate-review" if unread_ids else None,
+            "active_step": "candidate-review" if pending_review else "write-requirement",
+            "pending_user_decision": "candidate-review" if pending_review else None,
             "observation_tracking": {
                 "project": project,
+                "pending_card_ids": inbox_card_ids,
                 "pending_observation_ids": unread_ids,
+                "last_card_pull_at": _utc_now() if pull_result is not None else None,
                 "last_observation_sync_at": _utc_now(),
             },
             "next_recommended_step": {
-                "id": "review_candidates" if unread_ids else "observe_run",
-                "reason": "Observation backlog has unread items for this workspace." if unread_ids else "No unread observation items are pending; keep observation current.",
+                "id": next_step["id"],
+                "reason": next_step["reason"],
             },
         },
         updated_by="observe-audit",
@@ -295,9 +349,15 @@ def audit_observation(
         print(f"catch_up_performed={payload['catch_up_performed']}")
         print(f"task_name={payload['scheduler'].get('task_name')}")
         print(f"last_run_id={payload['last_run'].get('last_run_id')}")
-        print(f"unread_observations={len(unread_ids)}")
+        print(f"inbox_cards={len(inbox_card_ids)}")
+        print(f"legacy_unread_observations={len(unread_ids)}")
         print(f"accepted={payload['queue_counts'].get('accepted', 0)}")
         print(f"snoozed={payload['queue_counts'].get('snoozed', 0)}")
+        if base_guidance:
+            print(base_guidance["message"])
+            print("Run one of:")
+            for command in base_guidance["commands"]:
+                print(f"- {command}")
         suggestion = payload["cadence_recommendation"].get("suggested_cadence")
         if suggestion:
             print(f"cadence_recommendation={suggestion}")
@@ -345,10 +405,12 @@ def build_observation_status_payload(repo_root: Path, project: str, *, workspace
     profile = load_profile(repo_root, project, create=True)
     state = _project_observation_state(repo_root, project)
     unread_ids: list[str] = []
+    inbox_card_ids: list[str] = []
     decision_checkpoint: dict[str, object] | None = None
     if workspace:
         _workspace_exists(repo_root, workspace)
         unread_ids = _unread_observation_ids(repo_root, workspace)
+        inbox_card_ids = candidate_card_ids(repo_root, workspace, "inbox")
         decision_checkpoint = _observation_decision_checkpoint_from_state(preview_current_state(repo_root, workspace))
     return {
         "project": project,
@@ -362,12 +424,13 @@ def build_observation_status_payload(repo_root: Path, project: str, *, workspace
         "last_run_at": state.get("last_run_at"),
         "next_scheduled_run_at": state.get("next_scheduled_run_at"),
         "catch_up_needed": catch_up_due(profile, {"updated_at": state.get("last_run_at")}),
-        "needs_review": bool(unread_ids),
+        "needs_review": bool(inbox_card_ids or unread_ids),
         "observation_count": int(state.get("observation_count", 0) or 0),
         "cadence_recommendation": profile.get("cadence_recommendation", {}),
         "decision_checkpoint": decision_checkpoint,
         "workspace_tracking": {
-            "pending_count": len(unread_ids),
+            "pending_count": len(inbox_card_ids) + len(unread_ids),
+            "pending_card_ids": inbox_card_ids,
             "pending_observation_ids": unread_ids,
         },
     }
@@ -398,25 +461,29 @@ def build_review_payload(repo_root: Path, workspace: str) -> dict[str, object]:
     _workspace_exists(repo_root, workspace)
     project = _infer_project_for_workspace(repo_root, workspace)
     unread_ids = _unread_observation_ids(repo_root, workspace)
+    inbox_cards = [parse_candidate_card(repo_root, path) for path in candidate_card_paths(repo_root, workspace, "inbox")]
+    inbox_card_ids = [str(card.get("card") or "") for card in inbox_cards if str(card.get("card") or "").strip()]
+    total_inbox = len(inbox_cards) + len(unread_ids)
     state = sync_current_state(
         repo_root,
         workspace,
         patch={
             "active_step": "candidate-review",
-            "pending_user_decision": "candidate-review" if unread_ids else None,
+            "pending_user_decision": "candidate-review" if total_inbox else None,
             "observation_tracking": {
                 "project": project,
+                "pending_card_ids": inbox_card_ids,
                 "pending_observation_ids": unread_ids,
                 "last_observation_sync_at": _utc_now(),
             },
             "next_recommended_step": {
-                "id": "review_candidates" if unread_ids else "observe_run",
-                "reason": "Unread observation items are waiting for review." if unread_ids else "No unread observation items remain; continue observation monitoring.",
+                "id": "review_candidates" if total_inbox else "pull_base_cards",
+                "reason": "Inbound Candidate Cards are waiting for review." if total_inbox else "No inbound Candidate Cards remain; pull Feishu Base cards to refresh the relay.",
             },
         },
         updated_by="observe-review",
     )
-    payload_cards: list[dict[str, object]] = []
+    payload_cards: list[dict[str, object]] = list(inbox_cards)
     for observation_id in unread_ids:
         observation_path = observation_file_path(repo_root, project, observation_id)
         meta = _read_json(observation_path)
@@ -428,6 +495,7 @@ def build_review_payload(repo_root: Path, workspace: str) -> dict[str, object]:
                 "card": observation_id,
                 "title": str(meta.get("title", observation_id)),
                 "kind": str(meta.get("kind", "general")),
+                "source": "legacy_observation",
                 "url": str(meta.get("url") or meta.get("source_url") or ""),
                 "status": "unread",
                 "summary": body.strip(),
@@ -449,12 +517,15 @@ def build_review_payload(repo_root: Path, workspace: str) -> dict[str, object]:
             "active": True,
             "inbox_count": len(payload_cards),
             "accepted_count": int(state.get("observation", {}).get("queue", {}).get("accepted", 0)) if isinstance(state.get("observation"), dict) else 0,
+            "primary_source": "candidate-updates" if inbox_cards else "legacy_observation",
+            "legacy_observation_count": len(unread_ids),
         },
         "cadence_recommendation": state.get("observation", {}).get("cadence_recommendation", {}) if isinstance(state.get("observation"), dict) else {},
         "cards": payload_cards,
         "counts": {
             "inbox": len(payload_cards),
             "accepted": int(state.get("observation", {}).get("queue", {}).get("accepted", 0)) if isinstance(state.get("observation"), dict) else 0,
+            "legacy_observation": len(unread_ids),
         },
     }
 

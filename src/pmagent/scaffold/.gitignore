@@ -4,6 +4,7 @@
 !.env.example
 
 # Local caches and transient logs.
+.DS_Store
 cache/
 .cache/
 .omx/
